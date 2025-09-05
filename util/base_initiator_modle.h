@@ -8,14 +8,13 @@
 #include <vector>
 #include <iostream>
 #include <string>
-#include "../src/vcore/PEA/systolic_array_top_tlm.h"
 #include "../src/vcore/FFT_SA/include/FFT_TLM.h"
 #include "../src/vcore/FFT_SA/utils/complex_types.h"
 #include "../src/vcore/FFT_SA/utils/fft_test_utils.h"
 #include "const.h"
 #include "tools.h"
 #include "instruction.h"
-#include "instruction_pea.h"
+
 
 using namespace std;
 using namespace sc_core;
@@ -37,6 +36,11 @@ public:
     tlm::tlm_dmi ddr_dmi;   
     tlm::tlm_dmi gsm_dmi;
     sc_event blocked_computation_done_event;
+    
+    // FFT事件驱动控制事件
+    sc_event fft_input_ready_event;     // 输入数据写入完成事件
+    sc_event fft_result_ready_event;    // FFT计算完成事件  
+    sc_event fft_output_ready_event;    // 输出数据读取完成事件
 
     int array_width;
     int array_height;
@@ -49,6 +53,12 @@ public:
     static constexpr int FFT_INPUT_WAIT_CYCLES = 20;        // 输入数据写入等待周期
     static constexpr int FFT_PROCESSING_WAIT_CYCLES = 100;  // FFT处理等待周期
     static constexpr int FFT_OUTPUT_WAIT_CYCLES = 20;       // 输出数据读取等待周期
+    
+    // FFT事件通知协议地址定义
+    static constexpr uint64_t FFT_EVENT_BASE_ADDR = 0xFFFF0000;     // 事件通知基地址
+    static constexpr uint64_t FFT_INPUT_READY_ADDR = 0xFFFF0001;    // 输入数据写入完成事件地址
+    static constexpr uint64_t FFT_RESULT_READY_ADDR = 0xFFFF0002;   // FFT计算完成事件地址
+    static constexpr uint64_t FFT_OUTPUT_READY_ADDR = 0xFFFF0003;   // 输出数据读取完成事件地址
     
     SC_HAS_PROCESS(BaseInitiatorModel);
     BaseInitiatorModel(sc_module_name name) : sc_module(name), 
@@ -67,8 +77,21 @@ public:
         uint64_t addr = trans.get_address();
         
         if (addr == 0xFFFFFFFF && *data_ptr == 1) {
-            // 收到计算完成通知
+            // 收到计算完成通知（保持原有逻辑）
             blocked_computation_done_event.notify();
+        }
+        // FFT事件通知处理
+        else if (addr == FFT_INPUT_READY_ADDR) {
+            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输入数据写入完成事件通知" << endl;
+            fft_input_ready_event.notify();
+        }
+        else if (addr == FFT_RESULT_READY_ADDR) {
+            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT计算完成事件通知" << endl;
+            fft_result_ready_event.notify();
+        }
+        else if (addr == FFT_OUTPUT_READY_ADDR) {
+            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输出数据读取完成事件通知" << endl;
+            fft_output_ready_event.notify(SC_ZERO_TIME);  // 使用SC_ZERO_TIME延迟通知
         }
         
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
@@ -413,8 +436,6 @@ public:
         }
         
         trans.clear_extension(&ext);
-
-        wait(FFT_CONFIG_WAIT_CYCLES, SC_NS);
     }
     
     /**
@@ -445,9 +466,6 @@ public:
         }
         
         trans.clear_extension(&ext);
-        
-        // 等待旋转因子加载完成
-        wait(FFT_TWIDDLE_WAIT_CYCLES, SC_NS);
     }
     
     /**
@@ -480,9 +498,6 @@ public:
         }
         
         trans.clear_extension(&ext);
-        
-        // 等待输入写入完成
-        wait(FFT_INPUT_WAIT_CYCLES, SC_NS);
     }
     
     /**
@@ -512,13 +527,6 @@ public:
         }
         
         trans.clear_extension(&ext);
-        
-        // while(!check_output_buffer_ready()){
-        //     wait(1,SC_NS);
-        // }
-
-        // 等待FFT处理完成
-        wait(FFT_PROCESSING_WAIT_CYCLES, SC_NS);
     }
     
     /**
@@ -550,9 +558,6 @@ public:
         
         trans.clear_extension(&ext);
         
-        // 等待输出读取完成
-        wait(FFT_OUTPUT_WAIT_CYCLES, SC_NS);
-        
         // 重构点复数输出
         return FFTTestUtils::reconstruct_complex_from_T_parallel(N, float_output);
     }
@@ -578,15 +583,19 @@ public:
         // 4. 写入输入数据
         cout << "[FFT_base_init] 4/5 写入输入数据..." << endl;
         send_fft_write_input_transaction(fft_size, input_data);
-        //wait(fft_input_ready_event);//new
+        wait(fft_input_ready_event);  // 等待输入数据写入完成事件
+        
         // 5. 启动FFT处理
         cout << "[FFT_base_init] 5/5 启动FFT处理..." << endl;
         send_fft_start_processing_transaction();
-        //wait(fft_result_ready_event);//new  通过监控
+        wait(fft_result_ready_event);  // 等待FFT计算完成事件
+        
         // 6. 读取输出结果
         cout << "[FFT_base_init] 读取输出结果..." << endl;
         auto output_data = send_fft_read_output_transaction(fft_size);
-        //wait(fft_output_ready_event);//new
+        cout << "[FFT_base_init] 等待输出数据读取完成事件..." << endl;
+        wait(fft_output_ready_event);  // 等待输出数据读取完成事件
+        cout << "[FFT_base_init] 输出数据读取完成事件已收到" << endl;
         cout << "[FFT_base_init] FFT计算完成 - " << output_data.size() << "个复数结果\n" << endl;
         
         return output_data;

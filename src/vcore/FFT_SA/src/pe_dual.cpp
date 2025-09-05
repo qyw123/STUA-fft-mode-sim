@@ -199,11 +199,6 @@ void PE_DUAL<T>::perform_fft() {
         complex<T> X0 = complex<T>(mac_i.read().real, mac_i.read().imag);
         complex<T> X1 = complex<T>(x_i.read().real, x_i.read().imag);
         
-        // 调试输出：打印PE接收的输入数据
-        cout << sc_time_stamp() << " " << this->name() << " 接收输入数据: "
-             << "X0=(" << X0.real << "," << X0.imag << ") "
-             << "X1=(" << X1.real << "," << X1.imag << ")" << endl;
-        
         // Twiddle处理
         bool conj_en = fft_conj_en_i.read();
         complex<T> W = conj_en ? 

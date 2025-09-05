@@ -43,24 +43,24 @@ PEA_FFT<T, N,  FIFO_DEPTH>::PEA_FFT(sc_module_name name) :
 {
     SC_HAS_PROCESS(PEA_FFT);
     
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Initializing PEA_FFT module (N=" << N 
-              << ", NUM_PE=" << NUM_PE << ", FIFO_DEPTH=" << FIFO_DEPTH << ")" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Initializing PEA_FFT module (N=" << N 
+    //           << ", NUM_PE=" << NUM_PE << ", FIFO_DEPTH=" << FIFO_DEPTH << ")" << std::endl;
     
     // ========== Instantiate Input Buffer Component ==========
     input_buffer = new IN_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>("input_buffer");
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Created input buffer module" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Created input buffer module" << std::endl;
     
     // ========== Instantiate FFT Core Component ==========
     fft_core = new FftMultiStage<T, N>("fft_core");
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Created FFT core module" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Created FFT core module" << std::endl;
     
     // ========== Instantiate Output Buffer Component ==========
     output_buffer = new OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>("output_buffer");
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Created output buffer module" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Created output buffer module" << std::endl;
     
     // ========== Setup All Internal Connections ==========
     setup_connections();
@@ -76,8 +76,8 @@ PEA_FFT<T, N,  FIFO_DEPTH>::PEA_FFT(sc_module_name name) :
     dont_initialize();
     
     
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] PEA_FFT initialization completed" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] PEA_FFT initialization completed" << std::endl;
 }
 
 // ========== Destructor Implementation ==========
@@ -86,14 +86,14 @@ PEA_FFT<T, N,  FIFO_DEPTH>::~PEA_FFT() {
     delete input_buffer;
     delete fft_core;
     delete output_buffer;
-    std::cout << "PEA_FFT destructor: All components cleaned up (input_buffer, fft_core, output_buffer)" << std::endl;
+    // std::cout << "PEA_FFT destructor: All components cleaned up (input_buffer, fft_core, output_buffer)" << std::endl;
 }
 
 // ========== Setup All Internal Connections ==========
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void PEA_FFT<T, N,  FIFO_DEPTH>::setup_connections() {
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Setting up internal connections..." << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Setting up internal connections..." << std::endl;
     
     // ========== Input Buffer Control Connections ==========
     input_buffer->clk_i(clk_i);
@@ -143,15 +143,15 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::setup_connections() {
     // ========== Output Buffer Connections ==========
     setup_output_buffer_connections();
     
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Internal connections setup completed" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Internal connections setup completed" << std::endl;
 }
 
 // ========== Map Buffer Groups to FFT Input Ports ==========
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void PEA_FFT<T, N,  FIFO_DEPTH>::map_buffer_to_fft_data() {
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Mapping buffer groups to FFT input ports..." << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Mapping buffer groups to FFT input ports..." << std::endl;
     
     // ========== Group0 (Buffer output) -> Separated Real/Imag Signals ==========
     // Group0: data_o_group0[0-3] = real parts, data_o_group0[4-7] = imag parts
@@ -186,17 +186,17 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::map_buffer_to_fft_data() {
         fft_core->in_b_v[i](buf_to_fft_b_v[i]);
     }
     
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Buffer to FFT data mapping completed:" << std::endl;
-    std::cout << "  - Group0 [0-3] -> FFT in_a[0-3], [4-7] -> dummy signals" << std::endl;
-    std::cout << "  - Group1 [0-3] -> FFT in_b[0-3], [4-7] -> dummy signals" << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Buffer to FFT data mapping completed:" << std::endl;
+    // std::cout << "  - Group0 [0-3] -> FFT in_a[0-3], [4-7] -> dummy signals" << std::endl;
+    // std::cout << "  - Group1 [0-3] -> FFT in_b[0-3], [4-7] -> dummy signals" << std::endl;
 }
 
 // ========== Setup Output Buffer Connections ==========
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void PEA_FFT<T, N,  FIFO_DEPTH>::setup_output_buffer_connections() {
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Setting up output buffer connections..." << std::endl;
+    // std::cout << sc_time_stamp() << ": [" << this->name() 
+    //           << "] Setting up output buffer connections..." << std::endl;
     
     // ========== Output Buffer Control Connections ==========
     output_buffer->clk_i(clk_i);
@@ -230,23 +230,25 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::setup_output_buffer_connections() {
         output_buffer->wr_ready_o_vec[i](wr_ready_out_vec[i]);
     }
     
-    std::cout << sc_time_stamp() << ": [" << this->name() 
-              << "] Output buffer connections completed:" << std::endl;
-    std::cout << "  - FFT outputs → Output buffer inputs (Y0[0-3], Y1[0-3])" << std::endl;
-    std::cout << "  - Output buffer → 16-way parallel outputs (real/imag separation)" << std::endl;
+//     std::cout << sc_time_stamp() << ": [" << this->name() 
+//               << "] Output buffer connections completed:" << std::endl;
+//     std::cout << "  - FFT outputs → Output buffer inputs (Y0[0-3], Y1[0-3])" << std::endl;
+//     std::cout << "  - Output buffer → 16-way parallel outputs (real/imag separation)" << std::endl;
 }
 
 // ========== Complex Number Reconstruction Process ==========
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
     // ========== Reconstruct Group0 Complex Numbers (X[0-3] -> FFT in_a) ==========
-    //cout << "complex_reconstruction_process" << endl;
     for (int i = 0; i < NUM_PE; ++i) {
         T real_part = buf_group0_real[i].read();
         T imag_part = buf_group0_imag[i].read();
         bool real_valid = buf_group0_real_v[i].read();
         bool imag_valid = buf_group0_imag_v[i].read();
         
+        if (real_valid && imag_valid) {
+            cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group0 complex data for FFT input a[" << i << "]" << endl;
+        }
         // Reconstruct complex number
         complex<T> complex_value = complex<T>(real_part, imag_part);
         buf_to_fft_a[i].write(complex_value);
@@ -260,6 +262,9 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
         bool real_valid = buf_group1_real_v[i].read();
         bool imag_valid = buf_group1_imag_v[i].read();
         
+        if (real_valid && imag_valid) {
+            cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group1 complex data for FFT input b[" << i << "]" << endl;
+        }
         // Reconstruct complex number
         complex<T> complex_value = complex<T>(real_part, imag_part);
         buf_to_fft_b[i].write(complex_value);
@@ -267,11 +272,6 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
     }
 }
 
-// ====== 模板显式实例化 ======
-// template class PEA_FFT<float, 4, 8>;
-// template class PEA_FFT<float, 8, 8>;
-// template class PEA_FFT<float, 16, 8>;
-// template class PEA_FFT<float, 32, 8>;
-// template class PEA_FFT<float, 64, 8>;
+
 
 #endif // PEA_FFT_CPP

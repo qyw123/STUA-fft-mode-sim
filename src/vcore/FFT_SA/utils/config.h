@@ -20,7 +20,7 @@ const int FFT_TWIDDLE_STABILIZE_CYCLES = 10;  // 旋转因子加载后稳定时�
 // 数据缓冲区操作延时
 const int FFT_INPUT_WRITE_SETUP_CYCLES = 1;   // 输入写使能建立时间
 const int FFT_INPUT_WRITE_HOLD_CYCLES = 2;    // 输入写信号保持时间
-const int FFT_OUTPUT_READ_SETUP_CYCLES = 2;   // 输出读启动建立时间
+const int FFT_OUTPUT_READ_SETUP_CYCLES = 4;   // 输出读启动建立时间
 const int FFT_OUTPUT_READ_HOLD_CYCLES = 1;    // 输出读信号保持时间
 
 // FFT处理管线延时

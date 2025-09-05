@@ -12,7 +12,6 @@ public:
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2cac_init_socket;
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2vpu_init_socket;
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2dma_init_socket;
-    // tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2pea_init_socket;
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2fft_init_socket;
     SC_CTOR(SPU) : vcore2spu_target_socket("vcore2spu_target_socket"), 
                 spu2cac_init_socket("spu2cac_init_socket"), 
@@ -24,7 +23,6 @@ public:
         spu2cac_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
         spu2vpu_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
         spu2dma_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
-        // spu2pea_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
         spu2fft_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
 
     }
@@ -51,7 +49,7 @@ public:
         }
         else{
             SC_REPORT_ERROR("SPU", "b_transport:Address out of range");
-            sc_stop(); // 或者 throw std::runtime_error("Address out of range");
+            sc_stop(); // 
             return;
         }
     }
@@ -69,9 +67,7 @@ public:
                    address >= DMA_BASE_ADDR && address < DMA_BASE_ADDR + DMA_SIZE) {
             return spu2dma_init_socket->get_direct_mem_ptr(trans, dmi_data);
             // DMA方向
-        // } else if (address >= PEA_BASE_ADDR && address < PEA_BASE_ADDR + PEA_SIZE) {
-        //     return spu2pea_init_socket->get_direct_mem_ptr(trans, dmi_data);
-        //     // PEA方向
+
         } else if (address >= FFT_BASE_ADDR && address < FFT_BASE_ADDR + FFT_SIZE) {
             return spu2fft_init_socket->get_direct_mem_ptr(trans, dmi_data);
             // FFT_TLM方向

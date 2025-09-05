@@ -242,8 +242,8 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::configure_fft_mode() {
             for(int i=0; i<static_cast<size_t>(log2_const(N)); i++){
                 stage_bypass_en[i].write(current_config.stage_bypass_en[i]);
             }
-            wait(1,SC_NS);
-            cout << "wait 成功" << endl;
+            // wait(1,SC_NS);
+            // cout << "wait 成功" << endl;
 
             FFTTestUtils::wait_cycles(FFT_CONFIG_SETUP_CYCLES, clock_period);
             
@@ -261,7 +261,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::configure_fft_mode() {
 // ========== Load Twiddle Factors SC_THREAD ==========
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void FFT_TLM<T, N,  FIFO_DEPTH>::load_twiddle_factors() {
-    FFTTestUtils::wait_cycles(FFT_INIT_STARTUP_CYCLES, clock_period);  // Initial delay
+    // FFTTestUtils::wait_cycles(FFT_INIT_STARTUP_CYCLES, clock_period);  // Initial delay
     
     while (true) {
             wait(twiddle_load_complete_event);
@@ -345,6 +345,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::write_input_buffer() {
         
         if (timeout > 0) {
             cout << sc_time_stamp() << " [FFT_TLM] Input data written successfully" << endl;
+            send_input_ready_notification();  // 发送输入数据写入完成事件通知
         } else {
             cout << sc_time_stamp() << " [FFT_TLM] Input buffer write timeout" << endl;
         }
@@ -386,7 +387,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::process_fft_computation() {
                                FFT_OUTPUT_BUFFER_CYCLES + FFT_PIPELINE_MARGIN_CYCLES;
         
         cout << "  Pipeline latency estimation: " << TOTAL_CYCLES << " cycles" << endl;
-        FFTTestUtils::wait_cycles(TOTAL_CYCLES, clock_period);
+        //FFTTestUtils::wait_cycles(TOTAL_CYCLES, clock_period);
         
         cout << sc_time_stamp() << " [FFT_TLM] FFT processing completed" << endl;
     }
@@ -422,19 +423,6 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_buffer() {
             //cout << "output_data[" << i + N << "] = " << data_o_vec[src+N].read() << endl;
             current_data.output_valid[i + actual_fft_size] = rd_valid_o_vec[src+N].read();
         }
-        /*
-        我的希望赋值结果是output_data[0:actual_fft_size]是real,output_data[16:16+actual_fft_size]是real
-        N=16时，actual_fft_size=16，正确顺序，data_o_vec[0:15]是real,data_o_vec[16:31]是imag;
-        N=16时，actual_fft_size=8，赋值错误，
-            data_o_vec[0:1],data_o_vec[4:5]，data_o_vec[8:9]，data_o_vec[12:13]是real,
-            data_o_vec[16:17],data_o_vec[20:21]，data_o_vec[24:25]，data_o_vec[28:29]是imag;
-        N=16时，actual_fft_size=4，赋值错误，
-            data_o_vec[0:1]，data_o_vec[8:9]是real,
-            data_o_vec[16:17]，data_o_vec[24:25]是imag;
-        N=16时，actual_fft_size=2，赋值错误，
-            data_o_vec[0:1]是real,
-            data_o_vec[16:17]是imag;
-        */
         
         current_data.processing_complete = true;
         
@@ -442,7 +430,9 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_buffer() {
         
         // Keep rd_start_i active for a bit longer to ensure complete read
         FFTTestUtils::wait_cycles(FFT_OUTPUT_READ_HOLD_CYCLES, clock_period);
+        
         rd_start_i.write(false);
+        output_read_complete_done_event.notify();
     }
 }
 
@@ -524,15 +514,15 @@ template<typename T, unsigned N,  int FIFO_DEPTH>
 void FFT_TLM<T, N,  FIFO_DEPTH>::start_fft_processing_impl(sc_time& delay) {
     fft_processing_complete_event.notify();
     delay += clock_period * FFT_TLM_PROCESSING_CYCLES;
+    cout << "!!!!!!!!!!!!!" << endl;
 }
 
 template<typename T, unsigned N,  int FIFO_DEPTH>
 void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_data_impl(sc_time& delay, uint8_t* data_ptr, unsigned int data_len) {
     // Trigger the SC_THREAD to actually read from output buffer
     output_read_complete_event.notify();
-    
     // Wait for the SC_THREAD to complete the actual reading
-    FFTTestUtils::wait_cycles(FFT_TLM_OUTPUT_CYCLES, clock_period);
+    wait(output_read_complete_done_event);
     
     T* output_data = reinterpret_cast<T*>(data_ptr);
     
@@ -540,6 +530,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_data_impl(sc_time& delay, uint8_t* 
         output_data[i] = current_data.output_data[i];
     }
     
+    send_output_ready_notification();
     delay += clock_period * FFT_TLM_OUTPUT_CYCLES;
 }
 
@@ -614,7 +605,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::load_standard_twiddles() {
     auto twiddles = FFTTestUtils::generate_fft_twiddles(N);
     int fft_size = current_config.fft_size_real;
     
-    for (unsigned stage = log2_const(N)-log2(fft_size); stage < log2_const(N); stage++) {
+    for (unsigned stage = 0; stage < log2_const(N); stage++) {
         for (unsigned pe = 0; pe < NUM_PE; pe++) {
             load_single_twiddle(stage, pe, twiddles[stage][pe]);
         }
@@ -632,7 +623,49 @@ template<typename T, unsigned N,  int FIFO_DEPTH>
 void FFT_TLM<T, N,  FIFO_DEPTH>::monitor_output_ready() {
     if (output_ready_o.read()) {
         cout << sc_time_stamp() << " [FFT_TLM] Output buffer ready detected" << endl;
+        send_result_ready_notification();  // 发送输出数据准备完成事件通知
     }
+}
+
+// ========== Event Notification Method Implementations ==========
+
+template<typename T, unsigned N,  int FIFO_DEPTH>
+void FFT_TLM<T, N,  FIFO_DEPTH>::send_event_notification(uint64_t event_addr) {
+    tlm::tlm_generic_payload trans;
+    sc_time delay = sc_time(0, SC_NS);
+    
+    // 设置事件通知事务
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_address(event_addr);
+    uint8_t event_data = 1;  // 事件标志
+    trans.set_data_ptr(&event_data);
+    trans.set_data_length(1);
+    
+    // 通过fft2vcore_init_socket发送事件通知
+    fft2vcore_init_socket->b_transport(trans, delay);
+    
+    if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
+        cout << "WARNING: Event notification transaction failed for address 0x" 
+             << hex << event_addr << endl;
+    }
+}
+
+template<typename T, unsigned N,  int FIFO_DEPTH>
+void FFT_TLM<T, N,  FIFO_DEPTH>::send_input_ready_notification() {
+    cout << sc_time_stamp() << " [FFT_TLM] 发送输入数据写入完成事件通知" << endl;
+    send_event_notification(FFT_INPUT_READY_ADDR);
+}
+
+template<typename T, unsigned N,  int FIFO_DEPTH>
+void FFT_TLM<T, N,  FIFO_DEPTH>::send_result_ready_notification() {
+    cout << sc_time_stamp() << " [FFT_TLM] 发送FFT计算完成事件通知" << endl;
+    send_event_notification(FFT_RESULT_READY_ADDR);
+}
+
+template<typename T, unsigned N,  int FIFO_DEPTH>
+void FFT_TLM<T, N,  FIFO_DEPTH>::send_output_ready_notification() {
+    cout << sc_time_stamp() << " [FFT_TLM] 发送输出数据读取完成事件通知" << endl;
+    send_event_notification(FFT_OUTPUT_READY_ADDR);
 }
 
 // ====== 模板显式实例化 ======

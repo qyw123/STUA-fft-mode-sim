@@ -111,6 +111,12 @@ SC_MODULE(FFT_TLM) {
     static constexpr int NUM_PE = N/2;
     static constexpr int NUM_FIFOS = NUM_PE * 4;  // 16 FIFOs for 8-point FFT
     
+    // ========== Event Notification Address Constants ==========
+    static constexpr uint64_t FFT_EVENT_BASE_ADDR = 0xFFFF0000;     // 事件通知基地址
+    static constexpr uint64_t FFT_INPUT_READY_ADDR = 0xFFFF0001;    // 输入数据写入完成事件地址
+    static constexpr uint64_t FFT_RESULT_READY_ADDR = 0xFFFF0002;   // FFT计算完成事件地址
+    static constexpr uint64_t FFT_OUTPUT_READY_ADDR = 0xFFFF0003;   // 输出数据读取完成事件地址
+    
     // ========== TLM Interfaces ==========
     tlm_utils::multi_passthrough_target_socket<FFT_TLM, 512> spu2fft_target_socket;
     tlm_utils::multi_passthrough_initiator_socket<FFT_TLM, 512> fft2vcore_init_socket;
@@ -167,6 +173,7 @@ SC_MODULE(FFT_TLM) {
     sc_event input_write_complete_event;
     sc_event fft_processing_complete_event;
     sc_event output_read_complete_event;
+    sc_event output_read_complete_done_event;
     
     // ========== Single Data Storage ==========
     FFTData current_data;
@@ -249,6 +256,12 @@ SC_MODULE(FFT_TLM) {
     // ========== Monitor Methods ==========
     void monitor_input_ready();
     void monitor_output_ready();
+    
+    // ========== Event Notification Methods ==========
+    void send_event_notification(uint64_t event_addr);
+    void send_input_ready_notification();
+    void send_result_ready_notification();
+    void send_output_ready_notification();
     
     // ========== Twiddle Factor Management ==========
     void load_single_twiddle(unsigned stage, unsigned pe, const complex<T>& twiddle);

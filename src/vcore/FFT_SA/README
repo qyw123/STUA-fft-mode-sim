@@ -1,0 +1,27 @@
+FFT 脉动阵列 (FFT-SA) 模块概述FFT-SA 是一个为 STUA 矢量核心 (VCore) 设计的高性能、可配置的快速傅里叶变换 (FFT) 加速器。
+它采用多级流水线和脉动阵列 (Systolic Array) 思想，旨在实现高吞吐量的数据流处理。
+该模块被精心设计为一个完整的硬件子系统，包含了从数据缓冲、计算到结果输出的全套逻辑。
+通过顶层的 TLM-2.0 封装 (FFT_TLM)，它可以轻松地集成到更大型的片上系统 (SoC) 中，并响应高层软件的指令。
+核心特性多级流水线架构: 整个 FFT 计算过程被分解为多个蝶形运算级 (FftMultiStage)，实现了深度流水线，从而最大化了计算吞吐率。
+双功能处理单元 (PE_DUAL): 核心计算单元 PE_DUAL 不仅能执行 FFT 蝶形运算，还集成了 GEMM (通用矩阵乘) 的 MAC (乘累加) 功能。这种设计极大地提高了硬件资源的复用率。
+动态数据混洗 (Dynamic Shuffle): 在流水线的每一级之间，FftShuffleDyn 模块负责对数据进行动态的、基于当前阶段的完美混洗 (Perfect Shuffle)，这是实现 Cooley-Tukey FFT 算法的关键。灵活可配置:可变点数 FFT: 支持通过 "级旁路 (Stage Bypass)" 机制在固定规模的硬件上执行不同点数（如 16点、8点、4点）的 FFT 运算。模式控制: 可配置共轭计算 (fft_conj_en) 和缩放因子 (fft_shift) 以适应不同的算法需求。
+专用数据缓冲: 定制的输入 (IN_BUF_VEC_FFT) 和输出 (OUT_BUF_VEC_FFT) 缓冲模块，专门用于处理 FFT 所需的复杂数据通路，如实部和虚部的分离、数据分组和并行读写。
+TLM-2.0 接口: 顶层模块 FFT_TLM 提供了标准的 TLM-2.0 事务级接口，用于接收来自系统总线的命令，如复位、配置、加载旋转因子、启动计算和读取结果。
+模块架构FFT-SA 模块采用分层设计，结构清晰。
+其核心组件自上而下依次为：1. FFT_TLM (顶层 TLM 封装)角色: 作为整个 FFT-SA 的对外接口，负责与 SoC 的其他部分（如 SPU）进行通信。功能:解析传入的 TLM 事务，将其转换为对底层硬件 (PEA_FFT) 的控制信号。管理 sc_event 事件，以异步方式控制复位、配置、数据加载、计算和读取等一系列操作。维护加速器的状态（如 config_loaded, twiddles_loaded）。2. PEA_FFT (FFT 处理单元阵列)角色: 集成了数据缓冲和计算核心的顶层硬件模块。功能:实例化输入缓冲 (IN_BUF_VEC_FFT)、FFT核心 (FftMultiStage) 和输出缓冲 (OUT_BUF_VEC_FFT)。负责将这三个关键子模块连接起来，构建完整的数据流路径。3. IN_BUF_VEC_FFT & OUT_BUF_VEC_FFT (输入/输出缓冲)角色: 管理进出 FftMultiStage 的数据流。IN_BUF_VEC_FFT:接收16路并行浮点数据，并将它们组织成两组（Group0, Group1），分别代表 FFT 输入序列的前半部分和后半部分。在 PEA_FFT 内部，通过 complex_reconstruction_process 进程将分离的实部和虚部重新组合成复数，再送入 FftMultiStage。OUT_BUF_VEC_FFT:接收来自 FftMultiStage 的复数输出 (y0 和 y1)。通过 complex_decompose_driver 进程将复数分解为实部和虚部，并分别存入不同的 FIFO 组中，最终提供16路并行的浮点输出。4. FftMultiStage (多级 FFT 流水线)角色: FFT 算法的核心计算引擎。结构: 由多个 FftStageRow (蝶形运算级) 和 FftShuffleDyn (动态混洗级) 交错构成，形成一个深度流水线。例如，一个16点 FFT (N=16) 会有 log2(16)=4 个 FftStageRow 和 3 个 FftShuffleDyn。功能: 完整地执行了从输入到输出的 Cooley-Tukey FFT 算法。5. FftShuffleDyn (动态混洗模块)角色: 实现蝶形级之间的数据重新排序。功能: 根据当前的流水线级数 (stage_idx)，动态计算步长 (stride)，对输入数据进行完美混洗，为下一级蝶形运算准备正确的数据配对。6. PE_DUAL (双功能处理单元)角色: 最底层的原子计算单元。功能:在 FFT 模式下，执行一个完整的蝶形运算：Y0 = X0 + X1 和 Y1 = (X0 - X1) * W，其中 W 是旋转因子 (Twiddle Factor)。在 GEMM 模式下，执行一个标准的乘累加操作。支持 Bypass 模式，允许数据以零延迟直接通过，这是实现可变点数 FFT 的关键。工作流程一个典型的 FFT 计算任务通过以下步骤完成：复位与配置: FFT_Initiator 通过 TLM 事务发送 RESET 和 CONFIGURE 命令。FFT_TLM 接收后，复位 PEA_FFT 并设置 FFT 模式，如点数（通过 stage_bypass_en）、共轭和缩放因子。加载旋转因子: FFT_Initiator 发送 LOAD_TWIDDLES 命令。FFT_TLM 触发 load_twiddle_factors 进程，该进程会根据配置，计算每一级流水线所需的旋转因子，并通过 tw_load_en, tw_stage_idx, tw_pe_idx 和 tw_data 端口将其加载到 FftMultiStage 内部的每个 PE_DUAL 单元中。写入输入数据: FFT_Initiator 发送 WRITE_INPUT_DATA 命令，并附带16路并行浮点数据。FFT_TLM 将数据传递给 PEA_FFT 的 IN_BUF_VEC_FFT，数据被暂存起来。启动计算: FFT_Initiator 发送 START_PROCESSING 命令。FFT_TLM 将 fft_start_i 信号置为高电平，这会触发 IN_BUF_VEC_FFT 开始向 FftMultiStage 流水线送入数据。流水线处理: 数据在 FftMultiStage 中逐级流动，经过一次次的蝶形运算和动态混洗，最终计算结果从最后一级输出。结果缓冲: OUT_BUF_VEC_FFT 捕获 FftMultiStage 的复数输出，将其分解为实部和虚部并存储。读取输出: FFT_Initiator 发送 READ_OUTPUT_DATA 命令。FFT_TLM 触发 read_output_buffer 进程，该进程将 rd_start_i 置为高电平，使 OUT_BUF_VEC_FFT 将结果以16路并行浮点数的形式输出。目录结构FFT_SA/
+├── include/              # 头文件
+│   ├── FFT_TLM.h         # TLM 顶层封装
+│   ├── pea_fft.h         # PE 阵列顶层
+│   ├── fft_multi_stage.h # 多级流水线核心
+│   ├── fft_shuffle_dyn.h # 动态混洗模块
+│   ├── pe_dual.h         # 双功能处理单元
+│   ├── in_buf_vec_fft.h  # 输入缓冲
+│   └── out_buf_vec_fft.h # 输出缓冲
+├── src/                  # 源文件
+│   └── (corresponding .cpp files)
+├── utils/                # 工具函数与定义
+│   ├── complex_types.h   # 自定义复数类型
+│   ├── config.h          # 延时等配置常量
+│   └── fft_test_utils.h  # 测试辅助函数
+└── testbench/            # 单元测试与验证平台
+    └── Makefile          # 用于构建各个单元测试
