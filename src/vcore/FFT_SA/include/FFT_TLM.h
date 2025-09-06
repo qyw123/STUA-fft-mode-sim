@@ -140,7 +140,7 @@ SC_MODULE(FFT_TLM) {
     sc_signal<bool> fft_start_i{"fft_start_i"};
     sc_signal<bool> input_ready_o{"input_ready_o"};
     sc_signal<bool> input_empty_o{"input_empty_o"};
-    sc_signal<sc_uint<8>> fft_size_real{"fft_size_real"};
+    sc_signal<int> fft_size_real{"fft_size_real"};
     
     // Output Buffer Interface
     sc_signal<bool> rd_start_i{"rd_start_i"};

@@ -237,10 +237,10 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::buffer_status_monitor() {
     }
     
     // ========== Output buffer status ==========
-    bool all_ready = (ready_fifo_count == NUM_FIFOS);
+    bool output_ready = (ready_fifo_count == 2*fft_size_real.read());
     bool all_empty = (ready_fifo_count == 0);
     
-    buffer_ready_o.write(all_ready);
+    buffer_ready_o.write(output_ready);
     buffer_empty_o.write(all_empty);
 }
 

@@ -218,6 +218,7 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::setup_output_buffer_connections() {
     
     // Read control from external
     output_buffer->rd_start_i(rd_start_i);
+    output_buffer->fft_size_real(fft_size_real);
     
     // ========== Output Buffer Status Connections ==========
     output_buffer->buffer_ready_o(output_ready_o);
@@ -253,6 +254,9 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
         complex<T> complex_value = complex<T>(real_part, imag_part);
         buf_to_fft_a[i].write(complex_value);
         buf_to_fft_a_v[i].write(real_valid && imag_valid);
+
+        //应该统计接收了多少个有效的输入,然后传递给输出out_buf来控制ready信号
+
     }
     
     // ========== Reconstruct Group1 Complex Numbers (X[4-7] -> FFT in_b) ==========

@@ -29,6 +29,8 @@ SC_MODULE(OUT_BUF_VEC_FFT) {
     sc_vector<sc_in<bool>> data_i_y0_v;      // Y0 valid signals
     sc_vector<sc_in<bool>> data_i_y1_v;      // Y1 valid signals
     sc_in<bool> wr_start_i;                  // Write start signal
+    sc_in<int> fft_size_real;
+
 
     // ========== Data Read Ports (16-way parallel output) ==========
     sc_vector<sc_out<T>> data_o_vec;         // 16-way parallel data output (T)

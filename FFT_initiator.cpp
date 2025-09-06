@@ -42,12 +42,12 @@ void FFT_Initiator<T>::configure_test_parameters() {
     cout << "\n[CONFIG] Setting test parameters..." << endl;
     
     // 基础参数配置
-    TEST_FFT_SIZE = 16;  // 总FFT点数
+    //TEST_FFT_SIZE = 16;  // 总FFT点数
     test_frames_count = DEFAULT_TEST_FRAMES;
     
     // 2D分解参数（当M=16时，分解为4x4）
-    if (TEST_FFT_SIZE == 16) {
-        N1 = 4;  // 列数
+    if (TEST_FFT_SIZE == 64) {
+        N1 = 16;  // 列数
         N2 = 4;  // 行数
         
         assert(N1 * N2 == TEST_FFT_SIZE && "2D decomposition parameters (N1, N2) must multiply to TEST_FFT_SIZE");
@@ -148,6 +148,9 @@ void FFT_Initiator<T>::process_frame_2d_mode() {
     // 然后触发2D处理流程
     single_2d_start_event.notify();
     wait(single_2d_done_event);
+
+    //补充一个读出计算结果的逻辑
+    //read_out_frame_result();
 }
 
 template <typename T>
@@ -241,6 +244,8 @@ void FFT_Initiator<T>::FFT_single_2D_process() {
         
         // 初始化2D矩阵
         initialize_2d_matrices();
+
+        //增加数据传输延时模拟,使用DMA的点对点传输的操作,仿真从AM读入到in_buf_vec的延时
         
         // 三阶段处理
         process_2d_stage1_column_fft();
@@ -482,7 +487,7 @@ void FFT_Initiator<T>::finalize_2d_results() {
         cout << "(" << fixed << setprecision(2) 
              << final_output[i].real << "," << final_output[i].imag << ") ";
     }
-    if (final_output.size() > 8) cout << "...";
+    if (final_output.size() > 16) cout << "...";
     cout << endl;
 }
 

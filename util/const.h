@@ -18,7 +18,7 @@ using namespace sc_dt;
 using namespace std;
 using namespace tlm;
 
-const int FFT_TLM_N = 4;                    //FFT模式阵列一次处理帧长度,决定了模型中阵列的规模
+const int FFT_TLM_N = 16;                    //FFT模式阵列一次处理帧长度,决定了模型中阵列的规模
 const int FFT_TLM_buf_depth = 8;
 // const int TEST_FFT_SIZE = 4;     //实际测试的 FFT点数
 

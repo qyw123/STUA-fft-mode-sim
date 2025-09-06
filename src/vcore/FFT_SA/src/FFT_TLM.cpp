@@ -115,7 +115,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::connect_internal_signals() {
     pea_fft_core->fft_mode_i(fft_mode_i);
     pea_fft_core->fft_shift_i(fft_shift_i);
     pea_fft_core->fft_conj_en_i(fft_conj_en_i);
-    //pea_fft_core->fft_size_real(fft_size_real);
+    pea_fft_core->fft_size_real(fft_size_real);
     
     // // Debug: Print array sizes
     // cout << sc_time_stamp() << " [FFT_TLM] DEBUG: N=" << N << ", log2_const(N)=" << log2_const(N) << endl;

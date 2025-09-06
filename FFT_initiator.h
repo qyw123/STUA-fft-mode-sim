@@ -94,7 +94,7 @@ public:
     
     // ====== Test Configuration Parameters ======
     // FFT parameter configuration (based on FFT_TLM_test.cpp)
-    int  TEST_FFT_SIZE = 8;
+    int  TEST_FFT_SIZE = 64;
     static constexpr unsigned DEFAULT_TEST_FRAMES = 1; // Default test frame count
     
     // Configurable test parameters

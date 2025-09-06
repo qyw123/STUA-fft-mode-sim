@@ -62,6 +62,8 @@ SC_MODULE(PEA_FFT) {
     sc_in<sc_uint<8>> tw_stage_idx;          // Twiddle stage index
     sc_in<sc_uint<8>> tw_pe_idx;             // Twiddle PE index
     sc_in<complex<T>> tw_data;                        // Twiddle factor data
+
+    sc_in<int> fft_size_real;
     
     // ========== Internal Components ==========
     IN_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>* input_buffer;  // Input buffer module (T for real/imag separation)
@@ -105,6 +107,7 @@ SC_MODULE(PEA_FFT) {
     ~PEA_FFT();
 
 private:
+    
     // ========== Internal Control Methods ==========
     void setup_connections();               // Setup all internal connections
     void map_buffer_to_fft_data();         // Map buffer groups to FFT inputs
