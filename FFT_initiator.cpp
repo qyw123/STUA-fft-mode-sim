@@ -1,7 +1,7 @@
 /**
  * @file FFT_initiator.cpp  
  * @brief 重构后的 FFT_TLM Multi-Frame Test Program Implementation
- * @version 2.0 - 重构版本，分离了2D处理逻辑和存储管理
+ * @version 2.1 - 修复2D处理逻辑漏洞
  * @date 2025-01-10
  */
 
@@ -42,21 +42,23 @@ void FFT_Initiator<T>::configure_test_parameters() {
     cout << "\n[CONFIG] Setting test parameters..." << endl;
     
     // 基础参数配置
-    M = 16;  // 总FFT点数
+    TEST_FFT_SIZE = 16;  // 总FFT点数
     test_frames_count = DEFAULT_TEST_FRAMES;
     
     // 2D分解参数（当M=16时，分解为4x4）
-    if (M == 16) {
-        N1 = 4;  // 行数
-        N2 = 4;  // 列数
+    if (TEST_FFT_SIZE == 16) {
+        N1 = 4;  // 列数
+        N2 = 4;  // 行数
+        
+        assert(N1 * N2 == TEST_FFT_SIZE && "2D decomposition parameters (N1, N2) must multiply to TEST_FFT_SIZE");
         use_2d_decomposition = true;
-        cout << "  - 2D decomposition enabled: " << M << " = " << N1 << " x " << N2 << endl;
+        cout << "  - 2D decomposition enabled: " << TEST_FFT_SIZE << " = " << N1 << " x " << N2 << endl;
     } else {
         use_2d_decomposition = false;
-        cout << "  - Direct FFT mode: " << M << " points" << endl;
+        cout << "  - Direct FFT mode: " << TEST_FFT_SIZE << " points" << endl;
     }
     
-    real_single_fft_size = M;
+    real_single_fft_size = TEST_FFT_SIZE;
     single_frame_fft_size = real_single_fft_size;
     last_configured_fft_size = 0;
     
@@ -133,13 +135,17 @@ template <typename T>
 void FFT_Initiator<T>::reset_frame_state() {
     current_computation_done = false;
     current_verification_done = false;
+    frame_data_ready = false;  // 新增：数据准备状态标志
 }
 
 template <typename T>
 void FFT_Initiator<T>::process_frame_2d_mode() {
     cout << "[FRAME-2D] Using 2D decomposition mode" << endl;
     
-    // 触发2D处理流程
+    // 先准备整帧的数据（只执行一次）
+    prepare_frame_data_once();
+    
+    // 然后触发2D处理流程
     single_2d_start_event.notify();
     wait(single_2d_done_event);
 }
@@ -154,7 +160,39 @@ void FFT_Initiator<T>::process_frame_direct_mode() {
 }
 
 // ============================================
-// 数据生成与存储管理
+// 新增：一次性帧数据准备
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::prepare_frame_data_once() {
+    if (frame_data_ready) {
+        return;  // 数据已准备，避免重复
+    }
+    
+    cout << "\n[DATA-PREP] Preparing frame " << current_frame_id + 1 << " data (one-time)..." << endl;
+    
+    // Step 1: 生成测试数据
+    auto test_data = generate_frame_test_data();
+    
+    // Step 2: 数据搬移流程（DDR → AM）
+    perform_data_movement(test_data);
+    
+    // Step 3: 计算参考结果
+    compute_reference_results(test_data);
+    
+    // Step 4: 如果是2D模式，将数据重排为矩阵
+    if (use_2d_decomposition) {
+        vector<complex<T>> input_data = frame_input_data[current_frame_id];
+        frame_data_matrix[current_frame_id] = reshape_to_matrix(input_data, N2, N1);
+        cout << "  - Data reshaped to " << N2 << "x" << N1 << " matrix" << endl;
+    }
+    
+    frame_data_ready = true;
+    cout << "[DATA-PREP] Frame data preparation completed" << endl;
+}
+
+// ============================================
+// 数据生成与存储管理（修改版）
 // ============================================
 
 template <typename T>
@@ -162,26 +200,326 @@ void FFT_Initiator<T>::FFT_frame_generation_process() {
     while (true) {
         wait(fft_frame_prepare_event);
         
-        cout << "\n[DATA-GEN] Generating frame " << current_frame_id + 1 << " data..." << endl;
-        
-        // Step 1: 配置FFT参数（如果需要）
-        if (should_reconfigure_fft()) {
-            reconfigure_fft_hardware();
+        // 检查是否需要准备数据（对于2D模式，数据已在外部准备）
+        if (!frame_data_ready) {
+            cout << "\n[DATA-GEN] Generating frame " << current_frame_id + 1 << " data..." << endl;
+            
+            // Step 1: 配置FFT参数（如果需要）
+            if (should_reconfigure_fft()) {
+                reconfigure_fft_hardware();
+            }
+            
+            // Step 2: 生成测试数据
+            auto test_data = generate_frame_test_data();
+            
+            // Step 3: 数据搬移流程
+            perform_data_movement(test_data);
+            
+            // Step 4: 计算参考结果
+            compute_reference_results(test_data);
+            
+            frame_data_ready = true;
+            cout << "[DATA-GEN] Frame data generation completed" << endl;
+        } else {
+            cout << "[DATA-GEN] Using pre-prepared frame data" << endl;
         }
         
-        // Step 2: 生成测试数据
-        auto test_data = generate_frame_test_data();
-        
-        // Step 3: 数据搬移流程
-        perform_data_movement(test_data);
-        
-        // Step 4: 计算参考结果
-        compute_reference_results(test_data);
-        
-        cout << "[DATA-GEN] Frame data generation completed" << endl;
         fft_frame_prepare_done_event.notify();
     }
 }
+
+// ============================================
+// 2D FFT处理流程（修复版）
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::FFT_single_2D_process() {
+    while (true) {
+        wait(single_2d_start_event);
+        
+        cout << "\n[2D-FFT] Starting 2D decomposition..." << endl;
+        
+        // 初始化2D矩阵
+        initialize_2d_matrices();
+        
+        // 三阶段处理
+        process_2d_stage1_column_fft();
+        process_2d_stage2_twiddle();
+        process_2d_stage3_row_fft();
+        
+        // 结果整理
+        finalize_2d_results();
+        
+        // 执行最终验证
+        perform_final_verification();
+        
+        cout << "[2D-FFT] 2D decomposition completed" << endl;
+        single_2d_done_event.notify();
+    }
+}
+
+template <typename T>
+void FFT_Initiator<T>::initialize_2d_matrices() {
+    cout << "  [2D-INIT] Initializing matrices (N1=" << N1 << ", N2=" << N2 << ")" << endl;
+    
+    frame_G_matrix[current_frame_id].assign(N2, vector<complex<T>>(N1, complex<T>(0,0)));
+    frame_H_matrix[current_frame_id].assign(N2, vector<complex<T>>(N1, complex<T>(0,0)));
+    frame_X_matrix[current_frame_id].assign(N2, vector<complex<T>>(N1, complex<T>(0,0)));
+}
+
+template <typename T>
+void FFT_Initiator<T>::process_2d_stage1_column_fft() {
+    cout << "\n  [Stage 1] Column FFT Processing..." << endl;
+    current_2d_stage = 1;
+    
+    auto& input_matrix = frame_data_matrix[current_frame_id];
+    auto& G_matrix = frame_G_matrix[current_frame_id];
+    
+    // 对每一列进行N2点FFT
+    for (current_column_id = 0; current_column_id < N1; current_column_id++) {
+        cout << "    - Column " << current_column_id + 1 << "/" << N1 << ": ";
+        
+        // 提取列数据
+        vector<complex<float>> column_data(N2);
+        for (unsigned row = 0; row < N2; row++) {
+            column_data[row] = complex<float>(
+                input_matrix[row][current_column_id].real,
+                input_matrix[row][current_column_id].imag
+            );
+        }
+        
+        // 直接调用FFT计算核心（不触发数据生成）
+        vector<complex<float>> column_fft_result = this->perform_fft_core(column_data, N2);
+        
+        // 存储结果到G矩阵
+        for (unsigned row = 0; row < N2; row++) {
+            G_matrix[row][current_column_id] = complex<T>(
+                column_fft_result[row].real,
+                column_fft_result[row].imag
+            );
+        }
+        
+        cout << "completed" << endl;
+    }
+    
+    cout << "  [Stage 1] All column FFTs completed" << endl;
+}
+
+template <typename T>
+void FFT_Initiator<T>::process_2d_stage2_twiddle() {
+    cout << "\n  [Stage 2] Twiddle Factor Compensation..." << endl;
+    current_2d_stage = 2;
+    
+    auto& G_matrix = frame_G_matrix[current_frame_id];
+    auto& H_matrix = frame_H_matrix[current_frame_id];
+    
+    // 应用旋转因子补偿: H(n2,k1) = W_M^(n2*k1) * G(n2,k1)
+    for (unsigned n2 = 0; n2 < N2; n2++) {
+        for (unsigned k1 = 0; k1 < N1; k1++) {
+            complex<float> twiddle = compute_twiddle_factor(n2, k1, FFT_TLM_N);
+            complex<float> G_val(G_matrix[n2][k1].real, G_matrix[n2][k1].imag);
+            complex<float> H_val = twiddle * G_val;
+            H_matrix[n2][k1] = complex<T>(H_val.real, H_val.imag);
+        }
+    }
+    
+    cout << "  [Stage 2] Twiddle compensation completed" << endl;
+    cout << "    H_matrix values:" << endl;
+    for (unsigned r = 0; r < N2; ++r) {
+        cout << "      Row " << r << ": ";
+        for (unsigned c = 0; c < N1; ++c) {
+            cout << "(" << fixed << setprecision(2) << H_matrix[r][c].real << "," << H_matrix[r][c].imag << ") ";
+        }
+        cout << endl;
+    }
+
+    
+}
+
+template <typename T>
+void FFT_Initiator<T>::process_2d_stage3_row_fft() {
+    cout << "\n  [Stage 3] Row FFT Processing..." << endl;
+    current_2d_stage = 3;
+    
+    auto& H_matrix = frame_H_matrix[current_frame_id];
+    auto& X_matrix = frame_X_matrix[current_frame_id];
+    
+    // 对每一行进行N1点FFT
+    for (current_row_id = 0; current_row_id < N2; current_row_id++) {
+        cout << "    - Row " << current_row_id + 1 << "/" << N2 << ": ";
+        
+        // 提取行数据
+        vector<complex<float>> row_data(N1);
+        for (unsigned col = 0; col < N1; col++) {
+            row_data[col] = complex<float>(
+                H_matrix[current_row_id][col].real,
+                H_matrix[current_row_id][col].imag
+            );
+        }
+        
+        // 直接调用FFT计算核心（不触发数据生成）
+        vector<complex<float>> row_fft_result = this->perform_fft_core(row_data, N1);
+        
+        // 存储结果到X矩阵
+        for (unsigned col = 0; col < N1; col++) {
+            X_matrix[current_row_id][col] = complex<T>(
+                row_fft_result[col].real,
+                row_fft_result[col].imag
+            );
+        }
+        
+        cout << "completed" << endl;
+    }
+    
+    cout << "  [Stage 3] All row FFTs completed" << endl;
+}
+
+// ============================================
+// 新增：纯FFT计算核心（不含数据准备）
+// ============================================
+
+template <typename T>
+vector<complex<float>> FFT_Initiator<T>::perform_fft_core(const vector<complex<float>>& input, size_t fft_size) {
+    
+    // 检查是否需要重新配置硬件
+    //很奇怪,每次计算必须配置一次,否则input_buf的读取无法启动
+    // if (fft_size != last_configured_fft_size) {
+        FFTConfiguration config = create_fft_configuration(FFT_TLM_N, fft_size);
+        send_fft_configure_transaction(config);
+        wait(sc_time(BaseInitiatorModel<T>::FFT_CONFIG_WAIT_CYCLES, SC_NS));
+        last_configured_fft_size = fft_size;
+    // }
+    // 调用基类的FFT执行函数（硬件仿真）
+    return perform_fft(input, fft_size);
+}
+
+// ============================================
+// FFT计算核心流程（修改版）
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::FFT_computation_process() {
+    while (true) {
+        wait(fft_computation_start_event);
+        
+        cout << "\n[FFT-COMP] Starting computation..." << endl;
+        
+        // 对于2D模式的列/行处理，数据已经在各自的stage函数中处理
+        // 这里只处理直接模式的计算
+        if (!use_2d_decomposition || current_2d_stage == 0) {
+            // 获取输入数据
+            vector<complex<T>> input_data = frame_input_data[current_frame_id];
+            
+            // 执行FFT计算
+            vector<complex<float>> complex_input(input_data.begin(), input_data.end());
+            vector<complex<float>> complex_output = this->perform_fft_core(complex_input, single_frame_fft_size);
+            
+            // 存储结果
+            vector<complex<T>> output_data(complex_output.begin(), complex_output.end());
+            frame_output_data[current_frame_id] = output_data;
+            
+            // 显示输出
+            cout << "  Output: ";
+            for (size_t i = 0; i < min(output_data.size(), size_t(8)); i++) {
+                cout << "(" << fixed << setprecision(2) 
+                     << output_data[i].real << "," << output_data[i].imag << ") ";
+            }
+            if (output_data.size() > 8) cout << "...";
+            cout << endl;
+        }
+        
+        cout << "[FFT-COMP] Computation completed" << endl;
+        fft_computation_done_event.notify();
+    }
+}
+
+// ============================================
+// 单帧处理流程（修改版）
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::FFT_single_frame_process() {
+    while (true) {
+        wait(single_frame_start_event);
+        
+        cout << "\n[SINGLE-FRAME] Starting single frame processing..." << endl;
+        
+        // 触发数据生成（如果尚未准备）
+        if (!frame_data_ready) {
+            fft_frame_prepare_event.notify();
+            wait(fft_frame_prepare_done_event);
+        }
+        
+        // 触发FFT计算
+        fft_computation_start_event.notify();
+        wait(fft_computation_done_event);
+        
+        // 触发验证（仅在非2D模式或2D处理完成时）
+        if (!use_2d_decomposition) {
+            fft_verification_start_event.notify();
+            wait(fft_verification_done_event);
+        }
+        
+        cout << "[SINGLE-FRAME] Single frame processing completed" << endl;
+        single_frame_done_event.notify();
+    }
+}
+
+// ============================================
+// 辅助函数实现
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::finalize_2d_results() {
+    // 将最终矩阵转换为输出向量
+    auto final_matrix = frame_X_matrix[current_frame_id];
+    vector<complex<T>> final_output = reshape_to_vector(final_matrix);
+    frame_output_data[current_frame_id] = final_output;
+    
+    // 显示结果
+    cout << "\n  Final 2D Output: ";
+    for (size_t i = 0; i < min(final_output.size(), size_t(8)); i++) {
+        cout << "(" << fixed << setprecision(2) 
+             << final_output[i].real << "," << final_output[i].imag << ") ";
+    }
+    if (final_output.size() > 8) cout << "...";
+    cout << endl;
+}
+
+template <typename T>
+void FFT_Initiator<T>::perform_final_verification() {
+    cout << "\n[2D-VERIFY] Performing final verification..." << endl;
+    
+    bool verification_passed = verify_frame_result(current_frame_id);
+    frame_test_results[current_frame_id] = verification_passed;
+    
+    cout << "  Result: " << (verification_passed ? "PASS ✓" : "FAIL ✗") << endl;
+}
+
+// ============================================
+// 验证流程
+// ============================================
+
+template <typename T>
+void FFT_Initiator<T>::FFT_verification_process() {
+    while (true) {
+        wait(fft_verification_start_event);
+        
+        cout << "\n[VERIFY] Verifying results..." << endl;
+        
+        bool verification_passed = verify_frame_result(current_frame_id);
+        frame_test_results[current_frame_id] = verification_passed;
+        
+        cout << "  Result: " << (verification_passed ? "PASS ✓" : "FAIL ✗") << endl;
+        
+        current_verification_done = true;
+        fft_verification_done_event.notify();
+    }
+}
+
+// ============================================
+// 原有辅助函数保持不变
+// ============================================
 
 template <typename T>
 bool FFT_Initiator<T>::should_reconfigure_fft() {
@@ -204,7 +542,7 @@ template <typename T>
 vector<complex<T>> FFT_Initiator<T>::generate_frame_test_data() {
     // 生成测试序列
     auto test_data = generate_test_sequence(
-        single_frame_fft_size, 
+        real_single_fft_size,  // 使用完整的M点数据
         DataGenType::SEQUENTIAL, 
         current_frame_id + 1
     );
@@ -248,7 +586,7 @@ void FFT_Initiator<T>::write_data_to_ddr(const vector<complex<T>>& data, uint64_
 
 template <typename T>
 void FFT_Initiator<T>::write_twiddle_factors_to_ddr(uint64_t addr) {
-    auto twiddle_factors = calculate_twiddle_factors<float>(TEST_FFT_SIZE);
+    auto twiddle_factors = calculate_twiddle_factors<float>(FFT_TLM_N);
     vector<complex<T>> complex_twiddles(twiddle_factors.begin(), twiddle_factors.end());
     write_complex_data_dmi_no_latency(addr, complex_twiddles, complex_twiddles.size(), this->ddr_dmi);
 }
@@ -274,161 +612,6 @@ void FFT_Initiator<T>::read_data_from_am(uint64_t addr, size_t size) {
     ins::read_from_dmi<complex<T>>(addr, data_read, this->am_dmi, size);
     frame_input_data[current_frame_id] = data_read;
 }
-
-// ============================================
-// 2D FFT处理流程
-// ============================================
-
-template <typename T>
-void FFT_Initiator<T>::FFT_single_2D_process() {
-    while (true) {
-        wait(single_2d_start_event);
-        
-        cout << "\n[2D-FFT] Starting 2D decomposition..." << endl;
-        
-        // 初始化2D矩阵
-        initialize_2d_matrices();
-        
-        // 三阶段处理
-        process_2d_stage1_column_fft();
-        process_2d_stage2_twiddle();
-        process_2d_stage3_row_fft();
-        
-        // 结果整理
-        finalize_2d_results();
-        
-        cout << "[2D-FFT] 2D decomposition completed" << endl;
-        single_2d_done_event.notify();
-    }
-}
-
-template <typename T>
-void FFT_Initiator<T>::initialize_2d_matrices() {
-    cout << "  [2D-INIT] Initializing matrices (N1=" << N1 << ", N2=" << N2 << ")" << endl;
-    
-    frame_data_matrix[current_frame_id].assign(N1, vector<complex<T>>(N2, complex<T>(0,0)));
-    frame_G_matrix[current_frame_id].assign(N1, vector<complex<T>>(N2, complex<T>(0,0)));
-    frame_H_matrix[current_frame_id].assign(N1, vector<complex<T>>(N2, complex<T>(0,0)));
-    frame_X_matrix[current_frame_id].assign(N1, vector<complex<T>>(N2, complex<T>(0,0)));
-}
-
-template <typename T>
-void FFT_Initiator<T>::process_2d_stage1_column_fft() {
-    cout << "\n  [Stage 1] Column FFT Processing..." << endl;
-    current_2d_stage = 1;
-    
-    for (current_column_id = 0; current_column_id < N1; current_column_id++) {
-        cout << "    - Column " << current_column_id + 1 << "/" << N1 << endl;
-        
-        // 设置当前FFT大小并触发处理
-        single_frame_fft_size = N2;  // 列FFT是N2点
-        single_frame_start_event.notify();
-        wait(single_frame_done_event);
-    }
-}
-
-template <typename T>
-void FFT_Initiator<T>::process_2d_stage2_twiddle() {
-    cout << "\n  [Stage 2] Twiddle Factor Compensation..." << endl;
-    current_2d_stage = 2;
-    
-    twiddle_compensation_start_event.notify();
-    wait(twiddle_compensation_done_event);
-}
-
-template <typename T>
-void FFT_Initiator<T>::process_2d_stage3_row_fft() {
-    cout << "\n  [Stage 3] Row FFT Processing..." << endl;
-    current_2d_stage = 3;
-    
-    for (current_row_id = 0; current_row_id < N2; current_row_id++) {
-        cout << "    - Row " << current_row_id + 1 << "/" << N2 << endl;
-        
-        // 设置当前FFT大小并触发处理
-        single_frame_fft_size = N1;  // 行FFT是N1点
-        single_frame_start_event.notify();
-        wait(single_frame_done_event);
-        
-    }
-}
-
-template <typename T>
-void FFT_Initiator<T>::finalize_2d_results() {
-    // 将最终矩阵转换为输出向量
-    auto final_matrix = frame_X_matrix[current_frame_id];
-    vector<complex<T>> final_output = reshape_to_vector(final_matrix);
-    frame_output_data[current_frame_id] = final_output;
-    
-    // 显示结果
-    cout << "\n  Final 2D Output: ";
-    for (size_t i = 0; i < min(final_output.size(), size_t(8)); i++) {
-        cout << "(" << fixed << setprecision(2) 
-             << final_output[i].real << "," << final_output[i].imag << ") ";
-    }
-    if (final_output.size() > 8) cout << "...";
-    cout << endl;
-}
-
-// ============================================
-// FFT计算核心流程
-// ============================================
-
-template <typename T>
-void FFT_Initiator<T>::FFT_computation_process() {
-    while (true) {
-        wait(fft_computation_start_event);
-        
-        cout << "\n[FFT-COMP] Starting computation..." << endl;
-        
-        // 获取输入数据
-        vector<complex<T>> input_data = frame_input_data[current_frame_id];
-        
-        // 执行FFT计算
-        vector<complex<float>> complex_input(input_data.begin(), input_data.end());
-        vector<complex<float>> complex_output = perform_fft(complex_input, single_frame_fft_size);
-        
-        // 存储结果
-        vector<complex<T>> output_data(complex_output.begin(), complex_output.end());
-        frame_output_data[current_frame_id] = output_data;
-        
-        // 显示输出
-        cout << "  Output: ";
-        for (size_t i = 0; i < min(output_data.size(), size_t(8)); i++) {
-            cout << "(" << fixed << setprecision(2) 
-                 << output_data[i].real << "," << output_data[i].imag << ") ";
-        }
-        if (output_data.size() > 8) cout << "...";
-        cout << endl;
-        
-        cout << "[FFT-COMP] Computation completed" << endl;
-        fft_computation_done_event.notify();
-    }
-}
-
-// ============================================
-// 验证流程
-// ============================================
-
-template <typename T>
-void FFT_Initiator<T>::FFT_verification_process() {
-    while (true) {
-        wait(fft_verification_start_event);
-        
-        cout << "\n[VERIFY] Verifying results..." << endl;
-        
-        bool verification_passed = verify_frame_result(current_frame_id);
-        frame_test_results[current_frame_id] = verification_passed;
-        
-        cout << "  Result: " << (verification_passed ? "PASS ✓" : "FAIL ✗") << endl;
-        
-        current_verification_done = true;
-        fft_verification_done_event.notify();
-    }
-}
-
-// ============================================
-// 辅助函数
-// ============================================
 
 template <typename T>
 FFTConfiguration FFT_Initiator<T>::create_fft_configuration(size_t hw_size, size_t real_size) {
@@ -486,56 +669,14 @@ void FFT_Initiator<T>::display_final_statistics() {
     cout << "Success rate: " << (100.0 * passed / test_frames_count) << "%" << endl;
 }
 
-// ============================================
-// 其他必要的成员函数（保持原有实现）
-// ============================================
-
 template <typename T>
-void FFT_Initiator<T>::FFT_twiddle_process() {
-    while (true) {
-        wait(twiddle_compensation_start_event);
-        
-        auto& G_matrix = frame_G_matrix[current_frame_id];
-        auto& H_matrix = frame_H_matrix[current_frame_id];
-        
-        // 应用旋转因子补偿: H(k2,n1) = W_M^(k2*n1) * G(k2,n1)
-        for (unsigned k2 = 0; k2 < N2; k2++) {
-            for (unsigned n1 = 0; n1 < N1; n1++) {
-                complex<float> twiddle = compute_twiddle_factor(k2, n1, M);
-                complex<float> G_val(G_matrix[k2][n1].real, G_matrix[k2][n1].imag);
-                complex<float> H_val = twiddle * G_val;
-                H_matrix[k2][n1] = complex<T>(H_val.real, H_val.imag);
-            }
-        }
-        
-        cout << "    - Twiddle compensation applied" << endl;
-        twiddle_compensation_done_event.notify();
-    }
+void FFT_Initiator<T>::compute_reference_results(const vector<complex<T>>& test_data) {
+    vector<complex<float>> complex_test_data(test_data.begin(), test_data.end());
+    vector<complex<float>> complex_reference = compute_reference_dft(complex_test_data);
+    frame_reference_data[current_frame_id] = vector<complex<T>>(complex_reference.begin(), 
+                                                                 complex_reference.end());
 }
 
-
-template <typename T>
-void FFT_Initiator<T>::FFT_single_frame_process() {
-    while (true) {
-        wait(single_frame_start_event);
-        
-        // 触发数据生成
-        fft_frame_prepare_event.notify();
-        wait(fft_frame_prepare_done_event);
-        
-        // 触发FFT计算
-        fft_computation_start_event.notify();
-        wait(fft_computation_done_event);
-        
-        // 触发验证
-        fft_verification_start_event.notify();
-        wait(fft_verification_done_event);
-        
-        single_frame_done_event.notify();
-    }
-}
-
-// 保留原有的辅助函数实现
 template <typename T>
 bool FFT_Initiator<T>::verify_frame_result(unsigned frame_id) {
     if (frame_test_results.empty()) {
@@ -549,29 +690,9 @@ bool FFT_Initiator<T>::verify_frame_result(unsigned frame_id) {
         cout << "  ERROR: Size mismatch" << endl;
         return false;
     }
-    
-    vector<complex<float>> fft_std_output(fft_output.begin(), fft_output.end());
-    vector<complex<float>> reference_complex(reference_dft.begin(), reference_dft.end());
-    
-    // 应用bit-reversal
-    vector<complex<float>> fft_natural_order(fft_std_output.size());
-    int fft_size = fft_std_output.size();
-    for (size_t i = 0; i < fft_size/2; i++) {
-        fft_natural_order[i] = fft_std_output[2*i];
-        fft_natural_order[i+fft_size/2] = fft_std_output[2*i+1];
-    }
-    
-    const float tolerance = 0.1f;
-    return compare_complex_sequences(fft_natural_order, reference_complex, tolerance, false);
+
 }
 
-template <typename T>
-void FFT_Initiator<T>::compute_reference_results(const vector<complex<T>>& test_data) {
-    vector<complex<float>> complex_test_data(test_data.begin(), test_data.end());
-    vector<complex<float>> complex_reference = compute_reference_dft(complex_test_data);
-    frame_reference_data[current_frame_id] = vector<complex<T>>(complex_reference.begin(), 
-                                                                 complex_reference.end());
-}
 
 template <typename T>
 complex<float> FFT_Initiator<T>::compute_twiddle_factor(int k2, int n1, int N) {

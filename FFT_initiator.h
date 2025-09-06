@@ -50,7 +50,7 @@ struct FFT_Initiator : public BaseInitiatorModel<T> {
         // Register hierarchical and decomposition processes
         SC_THREAD(FFT_single_frame_process);     // 单帧（直接模式）处理流程
         SC_THREAD(FFT_single_2D_process);        // 单帧（2D分解模式）处理流程
-        SC_THREAD(FFT_twiddle_process);          // 2D分解中的旋转因子补偿进程
+        //_THREAD(FFT_twiddle_process);          // 2D分解中的旋转因子补偿进程
     }
 
 public:
@@ -94,6 +94,7 @@ public:
     
     // ====== Test Configuration Parameters ======
     // FFT parameter configuration (based on FFT_TLM_test.cpp)
+    int  TEST_FFT_SIZE = 8;
     static constexpr unsigned DEFAULT_TEST_FRAMES = 1; // Default test frame count
     
     // Configurable test parameters
@@ -104,6 +105,7 @@ public:
     unsigned single_frame_fft_size;      // Current single frame FFT size for hardware configuration
     unsigned last_configured_fft_size;   // Last configured FFT size to track changes
     bool use_2d_decomposition;            // Flag to control processing mode
+    bool frame_data_ready;                // Flag to indicate if frame data is ready
     
     // ====== 2D FFT Decomposition State Variables ======
     // These are used by the 2D process to track its internal state
@@ -152,7 +154,7 @@ private:
     void FFT_single_2D_process();
     
     // ====== 2D FFT Decomposition Process Declarations ======
-    void FFT_twiddle_process();
+    //void FFT_twiddle_process();
     
     // ====== Helper Method Declarations ======
     // Initialization helpers
@@ -172,6 +174,7 @@ private:
     bool should_reconfigure_fft();
     void reconfigure_fft_hardware();
     vector<complex<T>> generate_frame_test_data();
+    void prepare_frame_data_once();
     void perform_data_movement(const vector<complex<T>>& test_data);
     void write_data_to_ddr(const vector<complex<T>>& data, uint64_t addr);
     void write_twiddle_factors_to_ddr(uint64_t addr);
@@ -190,6 +193,9 @@ private:
     // Verification and math helpers
     void compute_reference_results(const vector<complex<T>>& test_data);
     bool verify_frame_result(unsigned frame_id);
+    vector<complex<float>> perform_fft_core(const vector<complex<float>>& input, size_t fft_size);
+    void perform_final_verification();
+    
     complex<float> compute_twiddle_factor(int k2, int n1, int N);
     vector<vector<complex<T>>> reshape_to_matrix(const vector<complex<T>>& input, int rows, int cols);
     vector<complex<T>> reshape_to_vector(const vector<vector<complex<T>>>& matrix);

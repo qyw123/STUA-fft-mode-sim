@@ -571,7 +571,7 @@ public:
      * @return 8点复数FFT结果
      */
     vector<complex<T>> perform_fft(const vector<complex<T>>& input_data, 
-                                                   unsigned fft_size = 8) {
+                                                   size_t fft_size = 8) {
         cout << "\n[FFT_base_init] Starting one-stop " << fft_size << "-point FFT computation\n";
         
         // Check input data size

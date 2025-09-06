@@ -298,8 +298,6 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::write_input_buffer() {
             data_i_vec[i].write(T(0));
             wr_en_i[i].write(false);
         }
-
-        
         // Enable symmetric distribution across both groups
         for (unsigned j = 0; j < actual_fft_size/2; j++) {
             // Group0: FIFO[j] real
@@ -322,12 +320,12 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::write_input_buffer() {
         FFTTestUtils::wait_cycles(FFT_INPUT_WRITE_SETUP_CYCLES, clock_period);
         
         // Debug output after 1-cycle delay to match write enable timing
-        cout << "Write enable pattern: ";
-        for (int i = 0; i < NUM_FIFOS; ++i) {
-            cout << (wr_en_i[i].read() ? "1" : "0");
-            if (i == N - 1) cout << "|";  // Group separator
-        }
-        cout << " (Group0|Group1 symmetric for " << actual_fft_size << "-point FFT)" << endl;
+        // cout << "Write enable pattern: ";
+        // for (int i = 0; i < NUM_FIFOS; ++i) {
+        //     cout << (wr_en_i[i].read() ? "1" : "0");
+        //     if (i == N - 1) cout << "|";  // Group separator
+        // }
+        // cout << " (Group0|Group1 symmetric for " << actual_fft_size << "-point FFT)" << endl;
         
         wr_start_i.write(false);
         for (int i = 0; i < NUM_FIFOS; ++i) {
@@ -514,7 +512,6 @@ template<typename T, unsigned N,  int FIFO_DEPTH>
 void FFT_TLM<T, N,  FIFO_DEPTH>::start_fft_processing_impl(sc_time& delay) {
     fft_processing_complete_event.notify();
     delay += clock_period * FFT_TLM_PROCESSING_CYCLES;
-    cout << "!!!!!!!!!!!!!" << endl;
 }
 
 template<typename T, unsigned N,  int FIFO_DEPTH>
