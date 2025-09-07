@@ -53,15 +53,15 @@ OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::OUT_BUF_VEC_FFT(sc_module_name name) :
     }
     
     // ========== Process Registration ==========
-    SC_THREAD(complex_decompose_driver);
+    SC_METHOD(complex_decompose_driver);
     sensitive << clk_i.pos();
     dont_initialize();
     
-    SC_THREAD(write_control_driver);
+    SC_METHOD(write_control_driver);
     sensitive << clk_i.pos();
     dont_initialize();
     
-    SC_THREAD(read_control_driver);
+    SC_METHOD(read_control_driver);
     sensitive << clk_i.pos();
     dont_initialize();
     
@@ -105,8 +105,8 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::complex_decompose_driver() {
                   << "] Reset: cleared all internal write signals" << std::endl;
     }
     
-    while (true) {
-        wait(); // Wait for clock rising edge
+    // while (true) {
+    //     wait(); // Wait for clock rising edge
         
         // Clear all write enable signals first
         for (int i = 0; i < NUM_FIFOS; ++i) {
@@ -134,10 +134,10 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::complex_decompose_driver() {
                 internal_data_i_vec[imag_fifo_idx].write(complex_val.imag);
                 internal_wr_en_vec[imag_fifo_idx].write(true);
                 
-                // std::cout << sc_time_stamp() << ": [" << this->name() 
-                //           << "] Y0[" << i << "] decomposed: re=" << complex_val.real 
-                //           << " → FIFO[" << real_fifo_idx << "], im=" << complex_val.imag
-                //           << " → FIFO[" << imag_fifo_idx << "]" << std::endl;
+                std::cout << sc_time_stamp() << ": [" << this->name() 
+                          << "] Y0[" << i << "] decomposed: re=" << complex_val.real 
+                          << " → FIFO[" << real_fifo_idx << "], im=" << complex_val.imag
+                          << " → FIFO[" << imag_fifo_idx << "]" << std::endl;
             }
             
             // Process Y1[i]
@@ -156,20 +156,20 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::complex_decompose_driver() {
                 internal_data_i_vec[imag_fifo_idx].write(complex_val.imag);
                 internal_wr_en_vec[imag_fifo_idx].write(true);
                 
-                // std::cout << sc_time_stamp() << ": [" << this->name() 
-                //           << "] Y1[" << i << "] decomposed: re=" << complex_val.real 
-                //           << " → FIFO[" << real_fifo_idx << "], im=" << complex_val.imag 
-                //           << " → FIFO[" << imag_fifo_idx << "]" << std::endl;
+                std::cout << sc_time_stamp() << ": [" << this->name() 
+                          << "] Y1[" << i << "] decomposed: re=" << complex_val.real 
+                          << " → FIFO[" << real_fifo_idx << "], im=" << complex_val.imag 
+                          << " → FIFO[" << imag_fifo_idx << "]" << std::endl;
             }
         }
-    }
+    // }
 }
 
 // ========== Write Control Driver Process ==========
 template<typename T, int NUM_PE, int FIFO_DEPTH>
 void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::write_control_driver() {
-    while (true) {
-        wait(); // Wait for clock rising edge
+    // while (true) {
+    //     wait(); // Wait for clock rising edge
         
         bool wr_start_curr = wr_start_i.read();
         
@@ -188,14 +188,14 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::write_control_driver() {
         }
         
         wr_start_prev = wr_start_curr;
-    }
+    // }
 }
 
 // ========== Read Control Driver Process ==========
 template<typename T, int NUM_PE, int FIFO_DEPTH>
 void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::read_control_driver() {
-    while (true) {
-        wait(); // Wait for clock rising edge
+    // while (true) {
+    //     wait(); // Wait for clock rising edge
         
         bool rd_start_curr = rd_start_i.read();
         
@@ -216,7 +216,7 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::read_control_driver() {
         }
         
         rd_start_prev = rd_start_curr;
-    }
+    // }
 }
 
 // ========== Buffer Status Monitor Process ==========
@@ -239,6 +239,11 @@ void OUT_BUF_VEC_FFT<T, NUM_PE, FIFO_DEPTH>::buffer_status_monitor() {
     // ========== Output buffer status ==========
     bool output_ready = (ready_fifo_count == 2*fft_size_real.read());
     bool all_empty = (ready_fifo_count == 0);
+    // if(output_ready){
+    //     std::cout << sc_time_stamp() << ": [" << this->name() 
+    //               << "] Output buffer ready" << std::endl;
+    
+    // }
     
     buffer_ready_o.write(output_ready);
     buffer_empty_o.write(all_empty);

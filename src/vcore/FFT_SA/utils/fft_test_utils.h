@@ -456,19 +456,25 @@ inline void map_complex_input_to_T_float(int N, const vector<complex<float>>& in
  * @return 8点复数输出
  */
 inline vector<complex<float>> reconstruct_complex_from_T_parallel(int N, const vector<float>& parallel_output) {
-    if (parallel_output.size() != 2*N) {
-        cout << "Error: reconstruct_complex_from_T_parallel requires 2*N("<< N << ") float inputs\n";
-        return vector<complex<float>>(8, complex<float>(0, 0));
-    }
+    // if (parallel_output.size() != 2*N) {
+    //     cout << "Error: reconstruct_complex_from_T_parallel requires 2*N("<< N << ") float inputs\n";
+    //     return vector<complex<float>>(8, complex<float>(0, 0));
+    // }
+    // vector<complex<float>> result(N);
+    // for (unsigned i = 0; i < N; ++i) {
+    //     result[i].real = parallel_output[i];
+    //     // cout << "parallel_output[" << i << "]=" <<  parallel_output[i] << endl;  
+    //     cout << "result[" << i << "].real=" <<  parallel_output[i] << endl;      
+    //     result[i].imag = parallel_output[i + N];    
+    //     cout << "result[" << i << "].imag="  <<  parallel_output[i+ N] << endl;  
+    // }
+
     vector<complex<float>> result(N);
     for (unsigned i = 0; i < N; ++i) {
-        result[i].real = parallel_output[i];
-        //cout << "parallel_output[" << i << "]=" <<  parallel_output[i] << endl;  
-        //cout << "result[" << i << "].real=" <<  parallel_output[i] << endl;      
-        result[i].imag = parallel_output[i + N];    
-        //cout << "result[" << i << "].imag="  <<  parallel_output[i+ N] << endl;  
+        result[i] = complex<float>(parallel_output[i], parallel_output[i + N]);
     }
-    
+    cout << "reconstruct_complex_from_T_parallel success" << endl;
+
     return result;
 }
 

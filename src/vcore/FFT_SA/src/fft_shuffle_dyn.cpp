@@ -79,8 +79,8 @@ void FftShuffleDyn<T,N>::process_delay_state_machine() {
                 out_b_v[k].write(temp_out_b_v[k]);
             }
             
-            cout << sc_time_stamp() << " " << this->name() 
-                 << " 混洗延时计算完成" << endl;
+            // cout << sc_time_stamp() << " " << this->name() 
+            //      << " 混洗延时计算完成" << endl;
         }
     } else if (shuffle_state == READY) {
         // 清除有效信号并回到空闲状态
@@ -106,8 +106,8 @@ void FftShuffleDyn<T,N>::perform_shuffle_computation() {
     
     // 只有在IDLE状态且有有效输入才能启动新的计算
     if (any_valid_input && (shuffle_state == IDLE)) {
-        cout << sc_time_stamp() << " " << this->name() 
-             << " 混洗计算启动，开始" << SHUFFLE_OPERATION_CYCLES << "周期延时" << endl;
+        // cout << sc_time_stamp() << " " << this->name() 
+        //      << " 混洗计算启动，开始" << SHUFFLE_OPERATION_CYCLES << "周期延时" << endl;
         
         // 读取控制信号
         current_fft_mode = fft_mode_i.read();

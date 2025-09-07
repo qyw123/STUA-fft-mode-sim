@@ -8,15 +8,15 @@
 template<typename T>
 PE_DUAL<T>::PE_DUAL(sc_module_name name) : sc_module(name) {
     // 权重和数据处理进程 (时钟同步)
-    SC_THREAD(weight_and_data_proc);
+    SC_METHOD(weight_and_data_proc);
     sensitive << clk_i.pos();
     
     // MAC计算和有效信号处理进程 (时钟同步)
-    SC_THREAD(mac_and_valid_proc);
+    SC_METHOD(mac_and_valid_proc);
     sensitive << clk_i.pos();
     
     // 输出多路选择进程
-    SC_THREAD(output_mux_proc);
+    SC_METHOD(output_mux_proc);
     sensitive << clk_i.pos() << stage_bypass_en << mac_v_i << x_v_i;
     
     // 初始化内部状态
@@ -59,7 +59,7 @@ void PE_DUAL<T>::reset_internal_state() {
 
 template<typename T>
 void PE_DUAL<T>::weight_and_data_proc() {
-    while (true) {
+    // while (true) {
         // 规范reset逻辑
         if (rst_i.read() == false) {
             w_gemm_r = complex<T>(0, 0);
@@ -93,8 +93,8 @@ void PE_DUAL<T>::weight_and_data_proc() {
                     w_fft_re_r = W.real;
                     w_fft_im_r = W.imag;
                     w_fft_valid = true;
-                    cout << sc_time_stamp() << " " << this->name() << " FFT Twiddle加载: (" 
-                         << W.real << "," << W.imag << ")" << endl;
+                    // cout << sc_time_stamp() << " " << this->name() << " FFT Twiddle加载: (" 
+                    //      << W.real << "," << W.imag << ")" << endl;
                 } else {
                     // GEMM模式：权重加载 (仅使用实部)
                     complex<T> w_complex = w_i.read();
@@ -105,15 +105,15 @@ void PE_DUAL<T>::weight_and_data_proc() {
                 }
             }
         }
-        wait(); // 等待下一个时钟上升沿
-    }
+    //     wait(); // 等待下一个时钟上升沿
+    // }
 }
 
 // ====== MAC计算和有效信号处理进程 ======
 
 template<typename T>
 void PE_DUAL<T>::mac_and_valid_proc() {
-    while (true) {
+    // while (true) {
         // 规范reset逻辑
         if (rst_i.read() == false) {
             gemm_mac_r = T(0);
@@ -137,8 +137,8 @@ void PE_DUAL<T>::mac_and_valid_proc() {
             perform_fft();
             perform_gemm_computation();
         }
-        wait(); // 等待下一个时钟上升沿
-    }
+    //     wait(); // 等待下一个时钟上升沿
+    // }
 }
 
 // ====== 延时控制状态机处理 ======
@@ -208,8 +208,8 @@ void PE_DUAL<T>::perform_fft() {
         int shift = fft_shift_i.read();
         
         // 调试输出：打印使用的Twiddle因子
-        cout << sc_time_stamp() << " " << this->name() << " 使用Twiddle因子: "
-             << "W=(" << W.real << "," << W.imag << ") shift=" << shift << endl;
+        // cout << sc_time_stamp() << " " << this->name() << " 使用Twiddle因子: "
+        //      << "W=(" << W.real << "," << W.imag << ") shift=" << shift << endl;
         
         // 立即计算FFT结果并存储到临时寄存器
         complex<T> sum = c_add(X0, X1);                    // Y0 = X0 + X1
@@ -223,9 +223,9 @@ void PE_DUAL<T>::perform_fft() {
         }
         
         // // 调试输出：打印计算结果
-        cout << sc_time_stamp() << " " << this->name() << " 计算结果: "
-             << "Y0=(" << sum.real << "," << sum.imag << ") "
-             << "Y1=(" << Y1.real << "," << Y1.imag << ")" << endl;
+        // cout << sc_time_stamp() << " " << this->name() << " 计算结果: "
+        //      << "Y0=(" << sum.real << "," << sum.imag << ") "
+        //      << "Y1=(" << Y1.real << "," << Y1.imag << ")" << endl;
         
         // 存储到临时寄存器，等待延时
         fft_temp_y0 = complex<T>(sum.real, sum.imag);
@@ -235,7 +235,7 @@ void PE_DUAL<T>::perform_fft() {
         fft_state = COMPUTING;
         fft_delay_counter = 1; // 从第1个周期开始计数
         
-        cout << sc_time_stamp() << " " << this->name() << " FFT计算启动，开始" << FFT_OPERATION_CYCLES << "周期延时" << endl;
+        // cout << sc_time_stamp() << " " << this->name() << " FFT计算启动，开始" << FFT_OPERATION_CYCLES << "周期延时" << endl;
     }
     // else{
     //     //打印下面的调试信息：
@@ -312,7 +312,7 @@ void PE_DUAL<T>::perform_gemm_computation() {
 
 template<typename T>
 void PE_DUAL<T>::output_mux_proc() {
-    while (true) {
+    // while (true) {
         // 规范reset逻辑 - Active low reset: false means in reset
         if (rst_i.read() == false) {
             mac_o.write(complex<T>(0, 0));
@@ -341,8 +341,8 @@ void PE_DUAL<T>::output_mux_proc() {
         mac_v_o.write(fft_y0_v_r);
         x_v_o.write(fft_y1_v_r);
         
-        cout << sc_time_stamp() << " " << this->name() << " FFT输出: Y0=(" << fft_y0_r.real << "," << fft_y0_r.imag 
-             << "), Y1=(" << fft_y1_r.real << "," << fft_y1_r.imag << ")" << endl;
+        // cout << sc_time_stamp() << " " << this->name() << " FFT输出: Y0=(" << fft_y0_r.real << "," << fft_y0_r.imag 
+        //      << "), Y1=(" << fft_y1_r.real << "," << fft_y1_r.imag << ")" << endl;
         
     } else if (is_gemm_ready()) {
         // GEMM模式：选择GEMM支路输出
@@ -362,8 +362,8 @@ void PE_DUAL<T>::output_mux_proc() {
             x_v_o.write(false);
         }
         }
-        wait(); // 等待下一个事件
-    }
+    //     wait(); // 等待下一个事件
+    // }
 }
 
 // ====== 辅助方法实现 ======

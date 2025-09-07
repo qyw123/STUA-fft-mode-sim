@@ -18,9 +18,8 @@ using namespace sc_dt;
 using namespace std;
 using namespace tlm;
 
-const int FFT_TLM_N = 16;                    //FFT模式阵列一次处理帧长度,决定了模型中阵列的规模
+const int FFT_TLM_N = 8;                    //FFT模式阵列一次处理帧最大长度,决定了模型中阵列的规模
 const int FFT_TLM_buf_depth = 8;
-// const int TEST_FFT_SIZE = 4;     //实际测试的 FFT点数
 
 //中转模块的目标个数，指令通过SPU转发给CAC、DMA和VPU；CAC连接DMA(Vcore)、DDR、GSM；DMA连接CAC、AM和SM
 const uint64_t DDR_id = 0;

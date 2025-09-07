@@ -239,7 +239,7 @@ SC_MODULE(FFT_TLM) {
     void register_thread_processes();
     void register_monitor_processes();
     void clear_all_control_signals();
-    void wait_cycles(int n);
+    //void wait_cycles(int n);
     bool check_input_buffer_ready();
     bool check_output_buffer_ready();
     

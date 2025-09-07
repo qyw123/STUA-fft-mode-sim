@@ -22,6 +22,7 @@
 #include "util/base_initiator_modle.h"
 #include "src/vcore/FFT_SA/utils/fft_test_utils.h"
 #include "src/vcore/FFT_SA/utils/complex_types.h"
+#include "FFT_initiator_utils.h"
 #include <vector>
 #include <map>
 #include <iostream>
@@ -30,6 +31,10 @@
 using namespace std;
 using namespace FFTTestUtils;
 
+class FFTDecompositionManager {
+    // Placeholder for potential future class-based management.
+};
+
 /**
  * @brief FFT_TLM Multi-Frame Test Initiator Class
  * 
@@ -37,6 +42,10 @@ using namespace FFTTestUtils;
  */
 template <typename T = float>
 struct FFT_Initiator : public BaseInitiatorModel<T> {
+
+    // ====== 2D FFT 分解策略分析 ======
+    // 动态计算分解参数
+    using DecompositionInfo = FFTInitiatorUtils::DecompositionInfo;
     
     // ====== Constructor and SystemC Process Registration ======
     SC_CTOR(FFT_Initiator) : BaseInitiatorModel<T>("FFT_Initiator") {
@@ -94,7 +103,7 @@ public:
     
     // ====== Test Configuration Parameters ======
     // FFT parameter configuration (based on FFT_TLM_test.cpp)
-    int  TEST_FFT_SIZE = 64;
+    int  TEST_FFT_SIZE;
     static constexpr unsigned DEFAULT_TEST_FRAMES = 1; // Default test frame count
     
     // Configurable test parameters
@@ -105,6 +114,7 @@ public:
     unsigned single_frame_fft_size;      // Current single frame FFT size for hardware configuration
     unsigned last_configured_fft_size;   // Last configured FFT size to track changes
     bool use_2d_decomposition;            // Flag to control processing mode
+    int decomposition_level;              // 分解层级 (0: direct, 1: L1, 2: L2)
     bool frame_data_ready;                // Flag to indicate if frame data is ready
     
     // ====== 2D FFT Decomposition State Variables ======
@@ -161,12 +171,21 @@ private:
     void configure_test_parameters();
     void setup_memory_interfaces();
     void initialize_fft_hardware();
-    FFTConfiguration create_fft_configuration(size_t hw_size, size_t real_size);
+    // moved to utils
 
     // Frame loop helpers
     void reset_frame_state();
     void process_frame_2d_mode();
     void process_frame_direct_mode();
+    void process_frame_level1_mode();
+    void process_frame_level2_mode();
+    void execute_level1_2d_fft();
+    void execute_level2_2d_fft(size_t L2_N1, size_t L2_N2);
+    vector<complex<float>> perform_adaptive_fft(const vector<complex<float>>& input, size_t fft_size);
+    vector<complex<float>> perform_level1_2d_fft_internal(const vector<complex<float>>& input, size_t n1, size_t n2, size_t total_size);
+    void process_level1_column_fft();
+    void process_level1_twiddle();
+    void process_level1_row_fft();
     void display_frame_result(unsigned frame_id);
     void display_final_statistics();
 
@@ -180,8 +199,6 @@ private:
     void write_twiddle_factors_to_ddr(uint64_t addr);
     void transfer_ddr_to_am(uint64_t src_addr, uint64_t dst_addr, size_t size);
     void read_data_from_am(uint64_t addr, size_t size);
-    uint64_t calculate_ddr_address(unsigned frame_id);
-    uint64_t calculate_am_address(unsigned frame_id);
 
     // 2D FFT decomposition helpers
     void initialize_2d_matrices();
@@ -189,6 +206,7 @@ private:
     void process_2d_stage2_twiddle();
     void process_2d_stage3_row_fft();
     void finalize_2d_results();
+    // moved to utils
     
     // Verification and math helpers
     void compute_reference_results(const vector<complex<T>>& test_data);
@@ -196,9 +214,7 @@ private:
     vector<complex<float>> perform_fft_core(const vector<complex<float>>& input, size_t fft_size);
     void perform_final_verification();
     
-    complex<float> compute_twiddle_factor(int k2, int n1, int N);
-    vector<vector<complex<T>>> reshape_to_matrix(const vector<complex<T>>& input, int rows, int cols);
-    vector<complex<T>> reshape_to_vector(const vector<vector<complex<T>>>& matrix);
+    // moved to utils: compute_twiddle_factor, reshape helpers
 
 };
 

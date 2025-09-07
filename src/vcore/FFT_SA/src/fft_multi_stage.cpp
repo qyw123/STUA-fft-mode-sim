@@ -38,14 +38,14 @@ FftStageRow<T,N>::FftStageRow(sc_module_name name) : sc_module(name) {
     }
     
     // 级控制进程
-    SC_THREAD(stage_control_proc);
+    SC_METHOD(stage_control_proc);
     sensitive << clk_i.pos();
 }
 
 template<typename T, unsigned N>
 void FftStageRow<T,N>::stage_control_proc() {
-    while (true) {
-        // 复位处理
+    // while (true) {
+    //     // 复位处理
         if (rst_i.read() == false) {
             for (unsigned k = 0; k < NUM_PES; ++k) {
                 twiddle_sig[k].write(complex<T>(0,0));
@@ -69,8 +69,8 @@ void FftStageRow<T,N>::stage_control_proc() {
                 }
             }
         }
-        wait();
-    }
+    //     wait();
+    // }
 }
 
 // ====== FftMultiStage实现 ======
@@ -159,13 +159,13 @@ FftMultiStage<T,N>::FftMultiStage(sc_module_name name) : sc_module(name) {
     }
     
     // 流水线控制进程
-    SC_THREAD(pipeline_control_proc);
+    SC_METHOD(pipeline_control_proc);
     sensitive << clk_i.pos();
 }
 
 template<typename T, unsigned N>
 void FftMultiStage<T,N>::pipeline_control_proc() {
-    while (true) {
+    // while (true) {
         // 复位处理 - 不直接写输出信号，避免多驱动冲突
         if (rst_i.read() == false) {
             // 仅处理内部控制逻辑，输出由各级PE负责
@@ -186,8 +186,8 @@ void FftMultiStage<T,N>::pipeline_control_proc() {
                 stage_tw_data_sig[s].write(stage_selected ? tw_data.read() : complex<T>(0,0));
             }
         }
-        wait();
-    }
+    //     wait();
+    // }
 }
 
 // ====== 模板显式实例化 ======

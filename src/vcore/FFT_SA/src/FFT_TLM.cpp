@@ -255,6 +255,11 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::configure_fft_mode() {
             cout << "  Conjugate: " << (current_config.fft_conj_en ? "Enabled" : "Disabled") << endl;
             cout << "  fft_size: " << dec << current_config.fft_size << endl;
             cout << "  fft_size_real: " << dec << current_config.fft_size_real << endl;
+            cout << "  stage_bypass: ";
+            for(const auto& bypass : current_config.stage_bypass_en) {
+                cout << (bypass ? "1" : "0");
+            }
+            cout << endl; 
     }
 }
 
@@ -287,11 +292,11 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::write_input_buffer() {
         wait(input_write_complete_event);
         
         cout << sc_time_stamp() << " [FFT_TLM] Writing input data..." << endl;
-        cout << "NUM_FIFOS = " << NUM_FIFOS<< endl;
+        // cout << "NUM_FIFOS = " << NUM_FIFOS<< endl;
         
         // Get actual FFT size from current configuration  
         unsigned actual_fft_size = current_config.fft_size_real;
-        cout << "Actual FFT size: " << actual_fft_size << "-point" << endl;
+        // cout << "Actual FFT size: " << actual_fft_size << "-point" << endl;
         
         // Clear all write enables first
         for (int i = 0; i < NUM_FIFOS; ++i) {
@@ -372,12 +377,12 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::process_fft_computation() {
         
         // Start FFT processing
         fft_start_i.write(true);
-        cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
+        // cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
         FFTTestUtils::wait_cycles(FFT_START_PULSE_CYCLES, clock_period);
-        cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
+        // cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
         // Keep fft_start_i active for a few cycles
         FFTTestUtils::wait_cycles(FFT_START_ACTIVE_CYCLES, clock_period);
-        cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
+        // cout << sc_time_stamp() << ": fft_start_i = " << fft_start_i << endl;
         fft_start_i.write(false);
         
         // Calculate and wait for pipeline processing completion
@@ -385,7 +390,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::process_fft_computation() {
                                FFT_OUTPUT_BUFFER_CYCLES + FFT_PIPELINE_MARGIN_CYCLES;
         
         cout << "  Pipeline latency estimation: " << TOTAL_CYCLES << " cycles" << endl;
-        //FFTTestUtils::wait_cycles(TOTAL_CYCLES, clock_period);
+        FFTTestUtils::wait_cycles(TOTAL_CYCLES, clock_period);
         
         cout << sc_time_stamp() << " [FFT_TLM] FFT processing completed" << endl;
     }
@@ -401,11 +406,13 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_buffer() {
         
         // Start output read
         rd_start_i.write(true);
-        
         // Wait for output buffer to process the rd_start signal and prepare data
         FFTTestUtils::wait_cycles(FFT_OUTPUT_READ_SETUP_CYCLES, clock_period); // Give output buffer time to respond to rd_start
+        rd_start_i.write(false);
+        FFTTestUtils::wait_cycles(FFT_OUTPUT_READ_SETUP_CYCLES, clock_period); 
         unsigned actual_fft_size = current_config.fft_size_real;
         // Sample output data after the output buffer has had time to respond
+        // cout << "actual_fft_size =" << actual_fft_size << endl;
         const int group_stride = 2 * (N / actual_fft_size); // e.g., N=16: s=2,4,8,16 as size shrinks
 
 
@@ -414,22 +421,21 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_buffer() {
             int src = (i / 2) * group_stride + (i % 2);
             // Real half
             current_data.output_data[i] = data_o_vec[src].read();
-            //cout << "output_data[" << i << "] = " << data_o_vec[src].read() << endl;
+            // cout << "output_data[" << i << "] = " << data_o_vec[src].read() << endl;
             current_data.output_valid[i] = rd_valid_o_vec[src].read();
             // Imag half mirrors real half with +N offset
             current_data.output_data[i + actual_fft_size] = data_o_vec[src+N].read();
-            //cout << "output_data[" << i + N << "] = " << data_o_vec[src+N].read() << endl;
+            // cout << "output_data[" << i + N << "] = " << data_o_vec[src+N].read() << endl;
             current_data.output_valid[i + actual_fft_size] = rd_valid_o_vec[src+N].read();
         }
         
         current_data.processing_complete = true;
         
-        cout << sc_time_stamp() << " [FFT_TLM] Output data captured" << endl;
-        
         // Keep rd_start_i active for a bit longer to ensure complete read
         FFTTestUtils::wait_cycles(FFT_OUTPUT_READ_HOLD_CYCLES, clock_period);
         
         rd_start_i.write(false);
+        cout << sc_time_stamp() << " [FFT_TLM] Output data captured" << endl;
         output_read_complete_done_event.notify();
     }
 }
@@ -520,7 +526,7 @@ void FFT_TLM<T, N,  FIFO_DEPTH>::read_output_data_impl(sc_time& delay, uint8_t* 
     output_read_complete_event.notify();
     // Wait for the SC_THREAD to complete the actual reading
     wait(output_read_complete_done_event);
-    
+    cout << "wait(output_read_complete_done_event);" << endl;
     T* output_data = reinterpret_cast<T*>(data_ptr);
     
     for (int i = 0; i < NUM_FIFOS; ++i) {

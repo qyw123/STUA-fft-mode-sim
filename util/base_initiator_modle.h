@@ -91,7 +91,7 @@ public:
         }
         else if (addr == FFT_OUTPUT_READY_ADDR) {
             cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输出数据读取完成事件通知" << endl;
-            fft_output_ready_event.notify(SC_ZERO_TIME);  // 使用SC_ZERO_TIME延迟通知
+            fft_output_ready_event.notify(1,SC_NS);  // 使用SC_ZERO_TIME延迟通知
         }
         
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
@@ -536,6 +536,7 @@ public:
      */
     vector<complex<T>> send_fft_read_output_transaction(int N) {
         // 准备N路复数浮点输出缓冲区
+
         vector<T> float_output(2*N, 0.0f);
         
         tlm::tlm_generic_payload trans;
@@ -552,11 +553,18 @@ public:
         trans.set_data_length(float_output.size() * sizeof(float));
         socket->b_transport(trans, delay);
         
+        
         if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
             cout << "ERROR: FFT output data read transaction failed" << endl;
         }
         
         trans.clear_extension(&ext);
+
+        // cout << "float_output data: ";
+        // for (size_t i = 0; i < float_output.size(); ++i) {
+        //     cout << float_output[i] << " ";
+        // }
+        // cout << endl;
         
         // 重构点复数输出
         return FFTTestUtils::reconstruct_complex_from_T_parallel(N, float_output);
@@ -591,13 +599,13 @@ public:
         wait(fft_result_ready_event);  // 等待FFT计算完成事件
         
         // 6. 读取输出结果
-        cout << "[FFT_base_init] 读取输出结果..." << endl;
+        cout << sc_time_stamp<< "[FFT_base_init] 读取输出结果..." << endl;
         auto output_data = send_fft_read_output_transaction(fft_size);
-        cout << "[FFT_base_init] 等待输出数据读取完成事件..." << endl;
-        wait(fft_output_ready_event);  // 等待输出数据读取完成事件
-        cout << "[FFT_base_init] 输出数据读取完成事件已收到" << endl;
-        cout << "[FFT_base_init] FFT计算完成 - " << output_data.size() << "个复数结果\n" << endl;
-        
+        cout << sc_time_stamp()<< "[FFT_base_init] 等待输出数据读取完成事件..." << endl;
+        //wait(fft_output_ready_event);  // 等待输出数据读取完成事件
+        cout << sc_time_stamp()<< "[FFT_base_init] 输出数据读取完成事件已收到" << endl;
+        cout << sc_time_stamp()<< "[FFT_base_init] FFT计算完成 - " << output_data.size() << "个复数结果\n" << endl;
+        wait(1,SC_NS);
         return output_data;
             
     }

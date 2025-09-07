@@ -247,15 +247,13 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
         bool real_valid = buf_group0_real_v[i].read();
         bool imag_valid = buf_group0_imag_v[i].read();
         
-        if (real_valid && imag_valid) {
-            cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group0 complex data for FFT input a[" << i << "]" << endl;
-        }
+        // if (real_valid && imag_valid) {
+        //     cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group0 complex data for FFT input a[" << i << "]" << endl;
+        // }
         // Reconstruct complex number
         complex<T> complex_value = complex<T>(real_part, imag_part);
         buf_to_fft_a[i].write(complex_value);
         buf_to_fft_a_v[i].write(real_valid && imag_valid);
-
-        //应该统计接收了多少个有效的输入,然后传递给输出out_buf来控制ready信号
 
     }
     
@@ -266,9 +264,9 @@ void PEA_FFT<T, N,  FIFO_DEPTH>::complex_reconstruction_process() {
         bool real_valid = buf_group1_real_v[i].read();
         bool imag_valid = buf_group1_imag_v[i].read();
         
-        if (real_valid && imag_valid) {
-            cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group1 complex data for FFT input b[" << i << "]" << endl;
-        }
+        // if (real_valid && imag_valid) {
+        //     cout << sc_time_stamp() << ": [" << this->name() << "] Reconstructing Group1 complex data for FFT input b[" << i << "]" << endl;
+        // }
         // Reconstruct complex number
         complex<T> complex_value = complex<T>(real_part, imag_part);
         buf_to_fft_b[i].write(complex_value);

@@ -76,8 +76,8 @@ SC_MODULE(FIFO) {
                 is_full = (data_count == BUFFER_DEPTH);
                 wr_ready_o.write(!is_full);
 
-                std::cout << sc_time_stamp() << ": [" << module_id << "] Write data=" << val
-                          << ", count=" << data_count << std::endl;
+                // std::cout << sc_time_stamp() << ": [" << module_id << "] Write data=" << val
+                //           << ", count=" << data_count << std::endl;
 
                 if (data_count == BUFFER_DEPTH) {
                     std::cout << sc_time_stamp() << ": [" << module_id << "] Buffer is FULL\n";
