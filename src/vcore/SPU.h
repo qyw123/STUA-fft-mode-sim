@@ -12,7 +12,7 @@ public:
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2cac_init_socket;
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2vpu_init_socket;
     tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2dma_init_socket;
-    tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2fft_init_socket;
+    tlm_utils::multi_passthrough_initiator_socket<SPU, 512> spu2gemm_init_socket;
     SC_CTOR(SPU) : vcore2spu_target_socket("vcore2spu_target_socket"), 
                 spu2cac_init_socket("spu2cac_init_socket"), 
                 spu2vpu_init_socket("spu2vpu_init_socket"), 
@@ -23,7 +23,7 @@ public:
         spu2cac_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
         spu2vpu_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
         spu2dma_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
-        spu2fft_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
+        spu2gemm_init_socket.register_invalidate_direct_mem_ptr(this, &SPU::invalidate_direct_mem_ptr);
 
     }
     //阻塞传输方法
@@ -43,9 +43,9 @@ public:
             // DMA方向
 
             
-        }else if (address >= FFT_BASE_ADDR && address < FFT_BASE_ADDR + FFT_SIZE) {
-            spu2fft_init_socket->b_transport(trans, delay);
-            // FFT_TLM方向
+        }else if (address >= GEMM_BASE_ADDR && address < GEMM_BASE_ADDR + GEMM_SIZE) {
+            spu2gemm_init_socket->b_transport(trans, delay);
+            // GEMM_TLM方向
         }
         else{
             SC_REPORT_ERROR("SPU", "b_transport:Address out of range");
@@ -68,9 +68,9 @@ public:
             return spu2dma_init_socket->get_direct_mem_ptr(trans, dmi_data);
             // DMA方向
 
-        } else if (address >= FFT_BASE_ADDR && address < FFT_BASE_ADDR + FFT_SIZE) {
-            return spu2fft_init_socket->get_direct_mem_ptr(trans, dmi_data);
-            // FFT_TLM方向
+        } else if (address >= GEMM_BASE_ADDR && address < GEMM_BASE_ADDR + GEMM_SIZE) {
+            return spu2gemm_init_socket->get_direct_mem_ptr(trans, dmi_data);
+            // GEMM_TLM方向
         }
         else{
             SC_REPORT_ERROR("SPU", "get_direct_mem_ptr:Address out of range");

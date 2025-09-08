@@ -21,6 +21,8 @@ using namespace tlm;
 const int FFT_TLM_N = 16;                    //FFT模式阵列一次处理帧最大长度,决定了模型中阵列的规模
 const int FFT_TLM_buf_depth = 8;
 
+const int GEMM_TLM_N = 16;                    //GEMM模式阵列一次处理帧最大长度,决定了模型中阵列的规模
+const int GEMM_TLM_buf_depth = 8;
 //中转模块的目标个数，指令通过SPU转发给CAC、DMA和VPU；CAC连接DMA(Vcore)、DDR、GSM；DMA连接CAC、AM和SM
 const uint64_t DDR_id = 0;
 const uint64_t N_TARGETS = 2;
@@ -60,9 +62,9 @@ const uint64_t VPU_BASE_ADDR = 0x010100000;  // MAC base address,100000-10ffff
 const uint64_t VPU_REGISTER_SIZE = 64L * 64 ;  // 64个64位寄存器
 const uint64_t MAC_PER_VPU = 64;
 
-//PEA configurations
-const uint64_t PEA_BASE_ADDR = 0x010110000;  // PEA base address,110000-11ffff
-const uint64_t PEA_SIZE = 64L * 1024 ;  // PEA size (64KB)
+// GEMM_TLM configurations
+const uint64_t GEMM_BASE_ADDR = 0x010110000;  // GEMM_TLM base address,110000-11ffff
+const uint64_t GEMM_SIZE = 64L * 1024 ;  // GEMM_TLM size (64KB)
 
 //FFT_TLM configurations
 const uint64_t FFT_BASE_ADDR = 0x010120000;  // FFT_TLM base address,120000-12ffff

@@ -8,13 +8,14 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include "../src/vcore/PEA/systolic_array_top_tlm.h"
 #include "../src/vcore/FFT_SA/include/FFT_TLM.h"
 #include "../src/vcore/FFT_SA/utils/complex_types.h"
 #include "../src/vcore/FFT_SA/utils/fft_test_utils.h"
 #include "const.h"
 #include "tools.h"
 #include "instruction.h"
-
+#include "instruction_pea.h"
 
 using namespace std;
 using namespace sc_core;
@@ -36,30 +37,10 @@ public:
     tlm::tlm_dmi ddr_dmi;   
     tlm::tlm_dmi gsm_dmi;
     sc_event blocked_computation_done_event;
-    
-    // FFT事件驱动控制事件
-    sc_event fft_input_ready_event;     // 输入数据写入完成事件
-    sc_event fft_result_ready_event;    // FFT计算完成事件  
-    sc_event fft_output_ready_event;    // 输出数据读取完成事件
 
     int array_width;
     int array_height;
     //note: 下面构造函数进行定义阵列的规模,需要与Vore.h中的pe_array_size一致
-
-    
-    // FFT时序控制常量(基于测试代码的验证值)
-    static constexpr int FFT_CONFIG_WAIT_CYCLES = 15;       // 配置等待周期(1ns/cycle)
-    static constexpr int FFT_TWIDDLE_WAIT_CYCLES = 25;      // 旋转因子加载等待周期
-    static constexpr int FFT_INPUT_WAIT_CYCLES = 20;        // 输入数据写入等待周期
-    static constexpr int FFT_PROCESSING_WAIT_CYCLES = 100;  // FFT处理等待周期
-    static constexpr int FFT_OUTPUT_WAIT_CYCLES = 20;       // 输出数据读取等待周期
-    
-    // FFT事件通知协议地址定义
-    static constexpr uint64_t FFT_EVENT_BASE_ADDR = 0xFFFF0000;     // 事件通知基地址
-    static constexpr uint64_t FFT_INPUT_READY_ADDR = 0xFFFF0001;    // 输入数据写入完成事件地址
-    static constexpr uint64_t FFT_RESULT_READY_ADDR = 0xFFFF0002;   // FFT计算完成事件地址
-    static constexpr uint64_t FFT_OUTPUT_READY_ADDR = 0xFFFF0003;   // 输出数据读取完成事件地址
-    
     SC_HAS_PROCESS(BaseInitiatorModel);
     BaseInitiatorModel(sc_module_name name) : sc_module(name), 
         socket("socket"),soc2ext_target_socket("soc2ext_target_socket"),
@@ -77,24 +58,12 @@ public:
         uint64_t addr = trans.get_address();
         
         if (addr == 0xFFFFFFFF && *data_ptr == 1) {
-            // 收到计算完成通知（保持原有逻辑）
+            // 收到计算完成通知
             blocked_computation_done_event.notify();
         }
-        // FFT事件通知处理
-        else if (addr == FFT_INPUT_READY_ADDR) {
-            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输入数据写入完成事件通知" << endl;
-            fft_input_ready_event.notify();
-        }
-        else if (addr == FFT_RESULT_READY_ADDR) {
-            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT计算完成事件通知" << endl;
-            fft_result_ready_event.notify();
-        }
-        else if (addr == FFT_OUTPUT_READY_ADDR) {
-            cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输出数据读取完成事件通知" << endl;
-            fft_output_ready_event.notify();  // 使用SC_ZERO_TIME延迟通知
-        }
-        
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
+
+        //补充接收GEMM结果就绪的trans
     }
 
     /**
@@ -379,264 +348,11 @@ public:
             *target = values[i];
         }
     }
+    
+ 
 
-    //=============关于FFT_TLM的指令封装==============
-    
-    /**
-     * @brief FFT系统复位
-     * 发送FFT阵列复位命令
-     */
-    void send_fft_reset_transaction() {
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::RESET_FFT_ARRAY;
-        ext.data_size = 0;
-        
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        
-        uint8_t dummy = 0;
-        trans.set_data_ptr(&dummy);
-        trans.set_data_length(1);
-        socket->b_transport(trans, delay);
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT reset transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-    }
-    
-    /**
-     * @brief FFT配置设置
-     * 配置FFT参数(模式、大小等)
-     */
-    void send_fft_configure_transaction(const FFTConfiguration& config) {
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::CONFIGURE_FFT_MODE;
-        
-        ext.data_size = sizeof(FFTConfiguration);
-        
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        trans.set_data_ptr(reinterpret_cast<uint8_t*>(const_cast<FFTConfiguration*>(&config)));
-        trans.set_data_length(sizeof(FFTConfiguration));
-        
-        socket->b_transport(trans, delay);
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT configure transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-    }
-    
-    /**
-     * @brief 加载FFT旋转因子
-     * 批量加载标准旋转因子到FFT模块
-     */
-    void send_fft_load_twiddles_transaction() {
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::LOAD_TWIDDLE_FACTORS;
-        
-        ext.data_size = 0;
-        
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        
-        uint8_t dummy = 0;
-        trans.set_data_ptr(&dummy);
-        trans.set_data_length(1);
-        
-        socket->b_transport(trans, delay);
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT twiddle loading transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-    }
-    
-    /**
-     * @brief 写入FFT输入数据
-     * 将N点复数输入数据写入FFT模块
-     * @param input_data N点复数输入数据
-     */
-    void send_fft_write_input_transaction(int N, const vector<complex<T>>& input_data) {
-        // 转换为16路浮点格式，添加调试信息
-        // cout << "[DEBUG] send_fft_write_input_transaction: N=" << N << ", input_data.size()=" << input_data.size() << endl;
-        
-        vector<T> float_data(2*N, 0.0f);
-        FFTTestUtils::map_complex_input_to_T_float(N, input_data, float_data);
-        
-        // cout << "[DEBUG] After map_complex_input_to_T_float: float_data.size()=" << float_data.size() << endl;
-        
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::WRITE_INPUT_DATA;
-        ext.data_size = float_data.size() * sizeof(T);
-        
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        trans.set_data_ptr(reinterpret_cast<uint8_t*>(float_data.data()));
-        trans.set_data_length(float_data.size() * sizeof(float));
-        
-        socket->b_transport(trans, delay);
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT input data write transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-    }
-    
-    /**
-     * @brief 启动FFT处理
-     * 启动FFT计算
-     */
-    void send_fft_start_processing_transaction() {
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::START_FFT_PROCESSING;
-        ext.data_size = 0;
-        
-        trans.set_command(tlm::TLM_WRITE_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        
-        uint8_t dummy = 0;
-        trans.set_data_ptr(&dummy);
-        trans.set_data_length(1);
-        //cout << "start computing cmd" << endl;
-        socket->b_transport(trans, delay);
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT processing start transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-    }
-    
-    /**
-     * @brief 读取FFT输出数据
-     * 从FFT模块读取8点复数输出结果
-     * @return N点复数输出数据
-     */
-    vector<complex<T>> send_fft_read_output_transaction(int N) {
-        // 准备N路复数浮点输出缓冲区
-
-        vector<T> float_output(2*N, 0.0f);
-        
-        tlm::tlm_generic_payload trans;
-        sc_time delay = sc_time(0, SC_NS);
-        
-        FFTExtension ext;
-        ext.cmd = FFTCommand::READ_OUTPUT_DATA;
-        ext.data_size = float_output.size() * sizeof(float);
-        
-        trans.set_command(tlm::TLM_READ_COMMAND);
-        trans.set_address(FFT_BASE_ADDR);
-        trans.set_extension(&ext);
-        trans.set_data_ptr(reinterpret_cast<uint8_t*>(float_output.data()));
-        trans.set_data_length(float_output.size() * sizeof(float));
-        socket->b_transport(trans, delay);
-        
-        
-        if (trans.get_response_status() != tlm::TLM_OK_RESPONSE) {
-            cout << "ERROR: FFT output data read transaction failed" << endl;
-        }
-        
-        trans.clear_extension(&ext);
-
-        // cout << "float_output data: ";
-        // for (size_t i = 0; i < float_output.size(); ++i) {
-        //     cout << float_output[i] << " ";
-        // }
-        // cout << endl;
-        
-        // 重构点复数输出 - 添加详细调试信息
-        // cout << "[DEBUG] Before reconstruct_complex_from_T_parallel:" << endl;
-        // cout << "  - N = " << N << endl;
-        // cout << "  - float_output.size() = " << float_output.size() << endl;
-        // cout << "  - Expected size: " << 2*N << endl;
-        
-        // 显示前几个输出数据
-        // cout << "  - float_output data (first " << min(8, (int)float_output.size()) << " elements): ";
-        // for (size_t i = 0; i < min(8ul, float_output.size()); ++i) {
-        //     cout << float_output[i] << " ";
-        // }
-        // cout << endl;
-        
-        // 调用重构函数
-        vector<complex<T>> result = FFTTestUtils::reconstruct_complex_from_T_parallel(N, float_output);
-        
-        // cout << "[DEBUG] After reconstruct_complex_from_T_parallel:" << endl;
-        // cout << "  - result.size() = " << result.size() << endl;
-        // cout << "  - result data: ";
-        // for (size_t i = 0; i < min(4ul, result.size()); ++i) {
-        //     cout << "(" << result[i].real << "," << result[i].imag << ") ";
-        // }
-        // cout << endl;
-        
-        return result;
-    }
-    
-    /**
-     * @brief 一站式FFT计算
-     * 完成FFT的完整流程：配置->输入->处理->输出
-     * @param input_data 8点复数输入数据
-     * @param frame_id 帧ID(默认为0)
-     * @param fft_size FFT大小(默认为8)
-     * @return 8点复数FFT结果
-     */
-    vector<complex<T>> perform_fft(const vector<complex<T>>& input_data, 
-                                                   size_t fft_size = 8) {
-        cout << "\n[FFT_base_init] Starting one-stop " << fft_size << "-point FFT computation\n";
-        
-        // Check input data size
-        if (input_data.size() != fft_size) {
-            cout << "ERROR: Input data size (" << input_data.size() << ") does not match FFT size (" << fft_size << ")" << endl;
-            return vector<complex<T>>();
-        }
-        
-        // 4. 写入输入数据
-        cout << "[FFT_base_init] 4/5 写入输入数据..." << endl;
-        send_fft_write_input_transaction(fft_size, input_data);
-        wait(fft_input_ready_event);  // 等待输入数据写入完成事件
-        
-        // 5. 启动FFT处理
-        cout << "[FFT_base_init] 5/5 启动FFT处理..." << endl;
-        send_fft_start_processing_transaction();
-        wait(fft_result_ready_event);  // 等待FFT计算完成事件
-        
-        vector<complex<T>> output_data;
-        // 6. 读取输出结果
-        cout << sc_time_stamp<< "[FFT_base_init] 读取输出结果..." << endl;
-        output_data = send_fft_read_output_transaction(fft_size);
-        cout << sc_time_stamp()<< "[FFT_base_init] 等待输出数据读取完成事件..." << endl;
-        //wait(fft_output_ready_event);  // 等待输出数据读取完成事件
-        cout << sc_time_stamp()<< "[FFT_base_init] 输出数据读取完成事件已收到" << endl;
-        cout << sc_time_stamp()<< "[FFT_base_init] FFT计算完成 - " << output_data.size() << "个复数结果\n" << endl;
-        wait(1,SC_NS);
-        return output_data;
-            
-    }
+    //=============关于GEMM_TLM的指令封装==============
+ 
     
 };
 

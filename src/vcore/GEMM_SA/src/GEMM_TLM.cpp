@@ -3,7 +3,7 @@
  * @brief GEMM_TLM Ultra并行优化版本实现 - 测试2专用
  */
 
-#include "../include/GEMM_TLM_pp.h"
+#include "../include/GEMM_TLM.h"
 #include <iostream>
 
 using namespace std;
@@ -12,7 +12,8 @@ using namespace std;
 template<typename T, int SIZE>
 GEMM_TLM<T, SIZE>::GEMM_TLM(sc_module_name name) : 
     sc_module(name), 
-    target_socket("target_socket") {
+    target_socket("target_socket"),
+    initiator_socket("initiator_socket") {
     // 注册TLM接口回调
     target_socket.register_b_transport(this, &GEMM_TLM::b_transport);
     
@@ -167,6 +168,10 @@ void GEMM_TLM<T, SIZE>::state_machine_control() {
         case RESULT_READY:
             // 结果就绪状态
             cout << sc_time_stamp() << ": [GEMM_TLM状态机] 结果就绪" << endl;
+            
+            // 🚀 新增：发送结果就绪通知
+            send_result_ready_notification();
+            
             cout << sc_time_stamp() <<  ": [GEMM_TLM状态机] 重置计算状态" << endl;
             current_state = IDLE;
             computation_complete = false;
@@ -831,6 +836,35 @@ const sc_time GEMM_TLM<T, SIZE>::COMPUTE_EXTRA_DELAY = sc_time(100, SC_NS);
 template<typename T, int SIZE>
 const sc_time GEMM_TLM<T, SIZE>::RESET_DELAY = sc_time(10, SC_NS);
 
+// ====== 🚀 新增：结果就绪通知方法实现 ======
+template<typename T, int SIZE>
+void GEMM_TLM<T, SIZE>::send_result_ready_notification() {
+    cout << sc_time_stamp() << ": [GEMM_TLM-Notification] 发送计算完成通知" << endl;
+    
+    // 创建通知transaction
+    tlm::tlm_generic_payload trans;
+    sc_time delay = sc_time(5, SC_NS);  // 通知延时
+    
+    // 设置简单的通知标识
+    uint32_t notification_data = 0x12345678;  // 结果就绪魔法数字
+    trans.set_command(tlm::TLM_WRITE_COMMAND);
+    trans.set_data_ptr(reinterpret_cast<uint8_t*>(&notification_data));
+    trans.set_data_length(sizeof(uint32_t));
+    trans.set_streaming_width(sizeof(uint32_t));
+    trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
+    
+    // 发送通知（非阻塞）
+    try {
+        initiator_socket->b_transport(trans, delay);
+        if (trans.is_response_ok()) {
+            cout << sc_time_stamp() << ": [GEMM_TLM-Notification] ✅ 通知发送成功" << endl;
+        } else {
+            cout << sc_time_stamp() << ": [GEMM_TLM-Notification] ❌ 通知发送失败" << endl;
+        }
+    } catch (const std::exception& e) {
+        cout << sc_time_stamp() << ": [GEMM_TLM-Notification] ⚠️ 通知发送异常: " << e.what() << endl;
+    }
+}
 
 // 显式模板实例化
 template class GEMM_TLM<float, 4>;

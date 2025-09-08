@@ -9,7 +9,7 @@
 #include "vcore/VPU.h"
 #include "vcore/AM.h"
 #include "vcore/SM.h"
-#include "vcore/FFT_SA/include/FFT_TLM.h"
+#include "vcore/GEMM_SA/include/GEMM_TLM.h"
 using namespace sc_core;
 using namespace sc_dt;
 using namespace std;
@@ -28,7 +28,7 @@ public:
     tlm_utils::multi_passthrough_target_socket<VCore, 512> spu2vcore_target_socket;
     tlm_utils::multi_passthrough_target_socket<VCore, 512> dma2vcore_target_socket;
     tlm_utils::multi_passthrough_initiator_socket<VCore, 512> vcore2spu_init_socket;
-    tlm_utils::multi_passthrough_target_socket<VCore, 512> fft2vcore_target_socket;
+    tlm_utils::multi_passthrough_target_socket<VCore, 512> gemm2vcore_target_socket;
 
 
     VPU<T>* vpu;
@@ -37,8 +37,8 @@ public:
     SPU<T>* spu;
     DMA<T>* dma;
     
-    // FFT加速器模块
-    FFT_TLM<T, FFT_TLM_N, 8>* fft_tlm;
+    // GEMM模式加速器模块
+    GEMM_TLM<T, GEMM_TLM_N, GEMM_TLM_buf_depth>* gemm_tlm;
 
     VCore(sc_module_name name) : sc_module(name), 
                                 soc2vcore_target_socket("soc2vcore_target_socket"),
@@ -46,7 +46,7 @@ public:
                                 spu2vcore_target_socket("spu2vcore_target_socket"),
                                 dma2vcore_target_socket("dma2vcore_target_socket"),
                                 vcore2spu_init_socket("vcore2spu_init_socket"),
-                                fft2vcore_target_socket("fft2vcore_target_socket"),
+                                gemm2vcore_target_socket("gemm2vcore_target_socket"),
                                 vcore2soc_init_socket("vcore2soc_init_socket") {
         // 注册所有回调函数
         soc2vcore_target_socket.register_b_transport(this, &VCore::soc2vcore_b_transport);
@@ -57,8 +57,8 @@ public:
         
         dma2vcore_target_socket.register_b_transport(this, &VCore::dma2vcore_b_transport);
         dma2vcore_target_socket.register_get_direct_mem_ptr(this, &VCore::dma2vcore_get_direct_mem_ptr);
-        fft2vcore_target_socket.register_b_transport(this, &VCore::fft2vcore_b_transport);
-        fft2vcore_target_socket.register_get_direct_mem_ptr(this, &VCore::fft2vcore_get_direct_mem_ptr);
+        gemm2vcore_target_socket.register_b_transport(this, &VCore::gemm2vcore_b_transport);
+        gemm2vcore_target_socket.register_get_direct_mem_ptr(this, &VCore::gemm2vcore_get_direct_mem_ptr);
 
         // 创建子模块
         vpu = new VPU<T>("vpu");
@@ -67,13 +67,13 @@ public:
         dma = new DMA<T>("dma");
         spu = new SPU<T>("spu");
 
-        // 创建FFT加速器模块
-        fft_tlm = new FFT_TLM<T, FFT_TLM_N, FFT_TLM_buf_depth>("fft_tlm");
+        // 创建GEMM加速器模块
+        gemm_tlm = new GEMM_TLM<T, GEMM_TLM_N, GEMM_TLM_buf_depth>("gemm_tlm");
         //gemm-sa = new GEMM_TLM
 
-        // 连接FFT模块
-        spu->spu2fft_init_socket.bind(fft_tlm->spu2fft_target_socket);
-        fft_tlm->fft2vcore_init_socket.bind(fft2vcore_target_socket);
+        // 连接GEMM模块
+        spu->spu2gemm_init_socket.bind(gemm_tlm->spu2gemm_target_socket);
+        gemm_tlm->gemm2vcore_init_socket.bind(gemm2vcore_target_socket);
 
         // 绑定所有socket
         this->vcore2spu_init_socket.bind(spu->vcore2spu_target_socket);
@@ -94,7 +94,7 @@ public:
         this->vcore2cac_init_socket->b_transport(trans, delay);
     }
 
-    void fft2vcore_b_transport(int ID, tlm::tlm_generic_payload& trans, sc_time& delay) {
+    void gemm2vcore_b_transport(int ID, tlm::tlm_generic_payload& trans, sc_time& delay) {
         this->vcore2soc_init_socket->b_transport(trans, delay);
     }
     virtual bool soc2vcore_get_direct_mem_ptr(int ID, tlm::tlm_generic_payload& trans, tlm::tlm_dmi& dmi_data) {
@@ -107,7 +107,7 @@ public:
         return vcore2cac_init_socket->get_direct_mem_ptr(trans, dmi_data);
     }
 
-    virtual bool fft2vcore_get_direct_mem_ptr(int ID, tlm::tlm_generic_payload& trans, tlm::tlm_dmi& dmi_data) {
+    virtual bool gemm2vcore_get_direct_mem_ptr(int ID, tlm::tlm_generic_payload& trans, tlm::tlm_dmi& dmi_data) {
         return vcore2soc_init_socket->get_direct_mem_ptr(trans, dmi_data);
     }
 
@@ -117,7 +117,7 @@ public:
         delete am;
         delete spu;
         delete dma;
-        delete fft_tlm;
+        delete gemm_tlm;
     }
 };
 

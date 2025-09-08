@@ -15,6 +15,7 @@
 #include "systemc.h"
 #include "tlm.h"
 #include "tlm_utils/simple_target_socket.h"
+#include "tlm_utils/simple_initiator_socket.h"
 #include "PEA.h"
 #include <vector>
 #include <iostream>
@@ -329,6 +330,9 @@ SC_MODULE(GEMM_TLM) {
     // TLM目标接口
     tlm_utils::simple_target_socket<GEMM_TLM> target_socket;
     
+    // 🚀 新增：TLM发起接口 - 用于发送计算完成通知
+    tlm_utils::simple_initiator_socket<GEMM_TLM> initiator_socket;
+    
     // 内部时钟和复位信号
     sc_clock clk{"clk", 10, SC_NS};
     sc_signal<bool> rst{"rst"};
@@ -518,6 +522,9 @@ SC_MODULE(GEMM_TLM) {
     
     // 🚀 流水线统计和报告
     UltraTimingStats get_pipeline_stats() const;
+    
+    // 🚀 新增：发送结果就绪通知
+    void send_result_ready_notification();
 
     
     // 🚀 优化：延迟时间常量定义（修复constexpr问题）
