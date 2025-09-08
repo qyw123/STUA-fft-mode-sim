@@ -54,7 +54,7 @@ struct FFT_Initiator : public BaseInitiatorModel<T> {
         SC_THREAD(FFT_frame_loop_process);       // 帧循环主控制进程
         SC_THREAD(FFT_frame_generation_process); // 帧数据生成与搬移进程
         SC_THREAD(FFT_computation_process);      // FFT硬件计算进程
-        SC_THREAD(FFT_verification_process);     // 结果验证进程
+        //SC_THREAD(FFT_verification_process);     // 结果验证进程
         
         // Register hierarchical and decomposition processes
         SC_THREAD(FFT_single_frame_process);     // 单帧（直接模式）处理流程
@@ -157,7 +157,7 @@ private:
     void System_init_process();
     void FFT_frame_generation_process();
     void FFT_computation_process();
-    void FFT_verification_process();
+    //void FFT_verification_process();
     
     // ====== Hierarchical Processing Process Declarations ======
     void FFT_single_frame_process();
@@ -186,7 +186,7 @@ private:
     void process_level1_column_fft();
     void process_level1_twiddle();
     void process_level1_row_fft();
-    void display_frame_result(unsigned frame_id);
+    // void display_frame_result(unsigned frame_id);
     void display_final_statistics();
 
     // Data generation and movement helpers

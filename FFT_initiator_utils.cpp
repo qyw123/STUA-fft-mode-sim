@@ -33,7 +33,7 @@ DecompositionInfo analyze_decomposition_strategy(size_t fft_size, size_t base_n)
                 size_t n2 = fft_size / n1;
                 if (n2 <= base_n) {
                     info.level = 1;
-                    info.level_dims.emplace_back(n2, n1);
+                    info.level_dims.emplace_back(n1, n2);
                     info.is_valid = true;
                     return info;
                 }

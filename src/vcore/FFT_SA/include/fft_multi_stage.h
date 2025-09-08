@@ -11,14 +11,10 @@
 
 #include "systemc.h"
 #include "../utils/complex_types.h"
+#include "../utils/config.h"
 #include "pe_dual.h"
 #include "fft_shuffle_dyn.h"
 #include <array>
-
-// ====== 编译时工具函数 ======
-constexpr unsigned log2_const(unsigned n) {
-    return (n <= 1) ? 0 : 1 + log2_const(n >> 1);
-}
 
 /**
  * @brief FFT级行模块
@@ -62,11 +58,16 @@ private:
     sc_vector<sc_signal<complex<T>>> twiddle_sig{"twiddle_sig", NUM_PES};
     sc_vector<sc_signal<bool>> twiddle_en_sig{"twiddle_en_sig", NUM_PES};
     
+    // 每个实例独立的计数器
+    int stage_gen_counter;
+    
 public:
     SC_CTOR(FftStageRow);
     
 private:
     void stage_control_proc();
+    void data_monitor_proc();
+    void stage_general_monitor_proc();
 };
 
 /**
@@ -135,6 +136,9 @@ public:
     
 private:
     void pipeline_control_proc();
+    void input_data_monitor_proc();
+    void signal_test_proc();
+    void twiddle_test_proc();
 };
 
 #endif // FFT_MULTI_STAGE_H

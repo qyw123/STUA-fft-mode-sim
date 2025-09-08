@@ -87,21 +87,26 @@ void PE_DUAL<T>::weight_and_data_proc() {
             // 权重/Twiddle加载处理
             if (wr_en_i.read()) {
                 bool current_mode = fft_mode_i.read();
-                if (current_mode) {
+                cout << "[PE_TWIDDLE] " << this->name() << " 收到Twiddle写使能信号，当前模式: " << (current_mode ? "FFT" : "GEMM") << endl;
+                
+                // 解决SystemC信号传播延迟：如果是复数数据且不为零，强制按FFT模式处理
+                complex<T> W = w_i.read();
+                bool has_valid_twiddle = (W.real != 0 || W.imag != 0);
+                bool force_fft_mode = has_valid_twiddle; // 有非零Twiddle数据时强制FFT模式
+                
+                if (current_mode || force_fft_mode) {
                     // FFT模式：twiddle加载
-                    complex<T> W = w_i.read();
                     w_fft_re_r = W.real;
                     w_fft_im_r = W.imag;
                     w_fft_valid = true;
-                    // cout << sc_time_stamp() << " " << this->name() << " FFT Twiddle加载: (" 
-                    //      << W.real << "," << W.imag << ")" << endl;
+                    cout << sc_time_stamp() << " " << this->name() << " FFT Twiddle加载: (" 
+                         << W.real << "," << W.imag << ")" << (force_fft_mode ? " [强制FFT模式]" : "") << endl;
                 } else {
                     // GEMM模式：权重加载 (仅使用实部)
-                    complex<T> w_complex = w_i.read();
-                    w_gemm_r = complex<T>(w_complex.real, 0);
+                    w_gemm_r = complex<T>(W.real, 0);
                     w_gemm_valid = true;
                     cout << sc_time_stamp() << " " << this->name() << " GEMM Weight加载: " 
-                         << w_complex.real << endl;
+                         << W.real << endl;
                 }
             }
         }
@@ -155,8 +160,8 @@ void PE_DUAL<T>::process_delay_state_machines() {
             fft_y1_r = fft_temp_y1;
             fft_y0_v_r = true;
             fft_y1_v_r = true;
-            // cout << sc_time_stamp() << " " << this->name() << " FFT延时计算完成: Y0=(" << fft_y0_r.real << "," << fft_y0_r.imag 
-            //      << "), Y1=(" << fft_y1_r.real << "," << fft_y1_r.imag << ")" << endl;
+            cout << sc_time_stamp() << " " << this->name() << " FFT延时计算完成: Y0=(" << fft_y0_r.real << "," << fft_y0_r.imag 
+                 << "), Y1=(" << fft_y1_r.real << "," << fft_y1_r.imag << ")" << endl;
         }
     } else if (fft_state == READY) {
         // 清除有效信号并回到空闲状态
@@ -193,6 +198,13 @@ void PE_DUAL<T>::perform_fft() {
     bool x_valid = x_v_i.read();
     bool mac_valid = mac_v_i.read();
     
+    // 临时调试：打印PE状态
+    static int debug_pe_counter = 0;
+    if (++debug_pe_counter % 100 == 0) {
+        cout << "[PE_DEBUG] " << this->name() << " x_v=" << x_valid << " mac_v=" << mac_valid 
+             << " w_fft_v=" << w_fft_valid << " mode=" << mode_r << " fft_state=" << fft_state << endl;
+    }
+    
     // 只有在IDLE状态才能启动新的计算
     if (x_valid && mac_valid && w_fft_valid && !mode_switching && (mode_r == 1) && (fft_state == IDLE)) {
         // 输入数据获取 (X0=mac_i, X1=x_i)
@@ -223,9 +235,9 @@ void PE_DUAL<T>::perform_fft() {
         }
         
         // // 调试输出：打印计算结果
-        // cout << sc_time_stamp() << " " << this->name() << " 计算结果: "
-        //      << "Y0=(" << sum.real << "," << sum.imag << ") "
-        //      << "Y1=(" << Y1.real << "," << Y1.imag << ")" << endl;
+        cout << sc_time_stamp() << " " << this->name() << " 计算结果: "
+             << "Y0=(" << sum.real << "," << sum.imag << ") "
+             << "Y1=(" << Y1.real << "," << Y1.imag << ")" << endl;
         
         // 存储到临时寄存器，等待延时
         fft_temp_y0 = complex<T>(sum.real, sum.imag);
@@ -235,23 +247,22 @@ void PE_DUAL<T>::perform_fft() {
         fft_state = COMPUTING;
         fft_delay_counter = 1; // 从第1个周期开始计数
         
-        // cout << sc_time_stamp() << " " << this->name() << " FFT计算启动，开始" << FFT_OPERATION_CYCLES << "周期延时" << endl;
+        cout << sc_time_stamp() << " " << this->name() << " FFT计算启动，开始" << FFT_OPERATION_CYCLES << "周期延时" << endl;
+    } else {
+        // 打印详细的FFT启动条件检查
+        static int condition_debug_counter = 0;
+        if (++condition_debug_counter % 50 == 0 && (x_valid || mac_valid)) {  // 只在有输入数据时打印
+            cout << sc_time_stamp() << " " << this->name() << " FFT启动条件检查: "
+                 << "x_valid=" << x_valid 
+                 << ", mac_valid=" << mac_valid
+                 << ", w_fft_valid=" << w_fft_valid
+                 << ", mode_switching=" << mode_switching
+                 << ", mode_r=" << mode_r
+                 << ", fft_state=" << (fft_state == IDLE ? "IDLE" : (fft_state == COMPUTING ? "COMPUTING" : "READY"))
+                 << ", 综合条件=" << (x_valid && mac_valid && w_fft_valid && !mode_switching && (mode_r == 1) && (fft_state == IDLE))
+                 << endl;
+        }
     }
-    // else{
-    //     //打印下面的调试信息：
-    //     bool x_valid = x_v_i.read();
-    //     bool mac_valid = mac_v_i.read();
-        
-    //     cout << sc_time_stamp() << " " << this->name() << " FFT启动条件检查: "
-    //          << "x_valid=" << x_valid 
-    //          << ", mac_valid=" << mac_valid
-    //          << ", w_fft_valid=" << w_fft_valid
-    //          << ", mode_switching=" << mode_switching
-    //          << ", mode_r=" << mode_r
-    //          << ", fft_state=" << (fft_state == IDLE ? "IDLE" : "COMPUTING")
-    //          << ", 综合条件=" << (x_valid && mac_valid && w_fft_valid && !mode_switching && (mode_r == 1) && (fft_state == IDLE))
-    //          << endl;
-    // }
 }
 
 // ====== GEMM计算逻辑实现 (带延时控制的版本) ======

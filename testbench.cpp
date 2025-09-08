@@ -17,6 +17,6 @@ SC_MODULE(Top){
 int sc_main(int argc, char* argv[])
 {
     Top top("top");
-    sc_start();  // Run for 10 seconds or until sc_stop() is called sc_time(20000, SC_NS)
+    sc_start(sc_time(300,SC_NS));  // Run for 10 seconds or until sc_stop() is called sc_time(20000, SC_NS)
     return 0;
 }

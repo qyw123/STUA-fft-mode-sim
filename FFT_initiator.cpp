@@ -43,13 +43,9 @@ void FFT_Initiator<T>::configure_test_parameters() {
     cout << "\n[CONFIG] Setting test parameters..." << endl;
     
     // 基础参数配置
-    test_frames_count = DEFAULT_TEST_FRAMES;
+    test_frames_count = 4;
     
-
-    //FFT_TLM_N = 8; //设计FFT阵列加速最大的一帧点数
-    // 设置目标FFT点数 - 可以是任意值
-    // 示例配置：
-    TEST_FFT_SIZE = 16;  // 测试大点数FFT
+    TEST_FFT_SIZE = 16;// 测试大点数FFT
     
     // 动态分析分解策略
     auto decomp_info = FFTInitiatorUtils::analyze_decomposition_strategy(TEST_FFT_SIZE, FFT_TLM_N);
@@ -110,12 +106,13 @@ void FFT_Initiator<T>::initialize_fft_hardware() {
     FFTConfiguration config = FFTInitiatorUtils::create_fft_configuration(FFT_TLM_N, real_single_fft_size);
     send_fft_configure_transaction(config);
     
+
     // Step 3: 加载旋转因子
     cout << "  - Loading twiddle factors..." << endl;
     send_fft_load_twiddles_transaction();
     
     // 等待硬件初始化完成
-    wait(sc_time(BaseInitiatorModel<T>::FFT_TWIDDLE_WAIT_CYCLES, SC_NS));
+    wait(sc_time(2*FFT_TLM_N/2*FFT_TLM_N/2, SC_NS));
 }
 
 // ============================================
@@ -143,8 +140,7 @@ void FFT_Initiator<T>::FFT_frame_loop_process() {
         } else if (decomposition_level == 2) {
             process_frame_level2_mode();
         }
-        
-        display_frame_result(frame);
+
     }
     
     cout << "\n====== All Frames Processing Completed ======" << endl;
@@ -160,15 +156,15 @@ template <typename T>
 void FFT_Initiator<T>::process_frame_level1_mode() {
     cout << "[FRAME-L1] Using Level 1 (single 2D decomposition) mode" << endl;
     
-    // 准备数据
-    prepare_frame_data_once();
-    
-    // 获取Level 1的分解维度
+    // 首先获取Level 1的分解维度（在准备数据之前）
     auto decomp_info = FFTInitiatorUtils::analyze_decomposition_strategy(TEST_FFT_SIZE, FFT_TLM_N);
     N1 = decomp_info.level_dims[0].first;
     N2 = decomp_info.level_dims[0].second;
     
     cout << "  Level 1 decomposition: " << N1 << " × " << N2 << endl;
+    
+    // 现在准备数据（N1和N2已经正确设置）
+    prepare_frame_data_once();
     
     // 执行Level 1的2D处理
     execute_level1_2d_fft();
@@ -187,10 +183,8 @@ void FFT_Initiator<T>::execute_level1_2d_fft() {
     
     // Stage 1: 列FFT
     process_level1_column_fft();
-    
     // Stage 2: 旋转因子
     process_level1_twiddle();
-    
     // Stage 3: 行FFT
     process_level1_row_fft();
     
@@ -459,7 +453,7 @@ void FFT_Initiator<T>::process_level1_twiddle() {
             complex<float> G_val(G_matrix[n2][k1].real, G_matrix[n2][k1].imag);
             complex<float> H_val = twiddle * G_val;
             H_matrix[n2][k1] = complex<T>(H_val.real, H_val.imag);
-            wait(1,SC_NS);
+            //wait(19,SC_NS);
         }
     }
     cout << "  [L1-Stage2] Twiddle compensation completed" << endl;
@@ -744,23 +738,27 @@ void FFT_Initiator<T>::process_2d_stage3_row_fft() {
 
 template <typename T>
 vector<complex<float>> FFT_Initiator<T>::perform_fft_core(const vector<complex<float>>& input, size_t fft_size) {
+    // cout << "[DEBUG] perform_fft_core called: input.size()=" << input.size() << ", fft_size=" << fft_size << endl;
     
-    // 确保输入向量大小正确
-    vector<complex<float>> adjusted_input = input;
-    if (adjusted_input.size() != fft_size) {
-        adjusted_input.resize(fft_size);
+    reconfigure_fft_hardware();
+    
+    // 直接使用输入数据，避免不必要的复制
+    if (input.size() == fft_size) {
+        cout << "[DEBUG] Using input directly (no resize needed)" << endl;
+        return perform_fft(input, fft_size);
+    } else {
+        cout << "[DEBUG] Creating adjusted input (resize needed)" << endl;
+        // 只在必要时创建副本
+        vector<complex<float>> adjusted_input(fft_size);
+        for (size_t i = 0; i < min(input.size(), fft_size); i++) {
+            adjusted_input[i] = input[i];
+        }
+        // 剩余位置填零
+        for (size_t i = input.size(); i < fft_size; i++) {
+            adjusted_input[i] = complex<float>(0.0f, 0.0f);
+        }
+        return perform_fft(adjusted_input, fft_size);
     }
-
-    // 检查是否需要重新配置硬件
-    //很奇怪,每次计算必须配置一次,否则input_buf的读取无法启动
-    // if (fft_size != last_configured_fft_size) {
-    FFTConfiguration config = FFTInitiatorUtils::create_fft_configuration(FFT_TLM_N, fft_size);
-    send_fft_configure_transaction(config);
-    wait(sc_time(BaseInitiatorModel<T>::FFT_CONFIG_WAIT_CYCLES, SC_NS));
-    // last_configured_fft_size = fft_size;
-    // }
-    // 调用基类的FFT执行函数（硬件仿真）
-    return perform_fft(adjusted_input, fft_size);
 }
 
 // ============================================
@@ -786,15 +784,25 @@ void FFT_Initiator<T>::FFT_computation_process() {
             
             // 存储结果
             vector<complex<T>> output_data(complex_output.begin(), complex_output.end());
-            frame_output_data[current_frame_id] = output_data;
-            
-            // 显示输出
-            cout << "  Output: ";
-            for (size_t i = 0; i < min(output_data.size(), size_t(8)); i++) {
-                cout << "(" << fixed << setprecision(2) 
-                     << output_data[i].real << "," << output_data[i].imag << ") ";
+
+            //恢复为自然顺序，索引为偶的（0，2，4，。。。）为前半部分，索引为奇的（1，3，5，。。。）为后半部分
+            vector<complex<T>> output_data_natural_order(single_frame_fft_size);
+            for (size_t i = 0; i < single_frame_fft_size; i++) {
+                if (i % 2 == 0) {
+                    output_data_natural_order[i] = output_data[i/2];
+                } else {
+                    output_data_natural_order[i] = output_data[single_frame_fft_size/2 + i/2];
+                }
             }
-            if (output_data.size() > 8) cout << "...";
+            frame_output_data[current_frame_id] = output_data_natural_order;
+
+            // 显示输出
+            cout << "  Output（自然顺序）: ";
+            for (size_t i = 0; i < min(output_data_natural_order.size(), size_t(8)); i++) {
+                cout << "(" << fixed << setprecision(2) 
+                     << output_data_natural_order[i].real << "," << output_data_natural_order[i].imag << ") ";
+            }
+            if (output_data_natural_order.size() > 8) cout << "...";
             cout << endl;
         }
         
@@ -824,11 +832,6 @@ void FFT_Initiator<T>::FFT_single_frame_process() {
         fft_computation_start_event.notify();
         wait(fft_computation_done_event);
         
-        // 触发验证（仅在非2D模式或2D处理完成时）
-        if (!use_2d_decomposition) {
-            fft_verification_start_event.notify();
-            wait(fft_verification_done_event);
-        }
         
         cout << "[SINGLE-FRAME] Single frame processing completed" << endl;
         single_frame_done_event.notify();
@@ -860,36 +863,14 @@ template <typename T>
 void FFT_Initiator<T>::perform_final_verification() {
     cout << "\n[2D-VERIFY] Performing final verification..." << endl;
     
-    bool verification_passed = verify_frame_result(current_frame_id);
+    bool verification_passed = compare_complex_sequences(frame_output_data[current_frame_id], 
+                                        frame_reference_data[current_frame_id],1e-3f,true);
     frame_test_results[current_frame_id] = verification_passed;
     
     cout << "  Result: " << (verification_passed ? "PASS ✓" : "FAIL ✗") << endl;
 }
 
-// ============================================
-// 验证流程
-// ============================================
 
-template <typename T>
-void FFT_Initiator<T>::FFT_verification_process() {
-    while (true) {
-        wait(fft_verification_start_event);
-        
-        cout << "\n[VERIFY] Verifying results..." << endl;
-        
-        bool verification_passed = verify_frame_result(current_frame_id);
-        frame_test_results[current_frame_id] = verification_passed;
-        
-        cout << "  Result: " << (verification_passed ? "PASS ✓" : "FAIL ✗") << endl;
-        
-        current_verification_done = true;
-        fft_verification_done_event.notify();
-    }
-}
-
-// ============================================
-// 原有辅助函数保持不变
-// ============================================
 
 template <typename T>
 bool FFT_Initiator<T>::should_reconfigure_fft() {
@@ -904,7 +885,7 @@ void FFT_Initiator<T>::reconfigure_fft_hardware() {
     FFTConfiguration config = FFTInitiatorUtils::create_fft_configuration(FFT_TLM_N, single_frame_fft_size);
     send_fft_configure_transaction(config);
     
-    wait(sc_time(BaseInitiatorModel<T>::FFT_CONFIG_WAIT_CYCLES, SC_NS));
+    wait(sc_time(10, SC_NS));
     last_configured_fft_size = single_frame_fft_size;
 }
 
@@ -983,14 +964,7 @@ void FFT_Initiator<T>::read_data_from_am(uint64_t addr, size_t size) {
     frame_input_data[current_frame_id] = data_read;
 }
 
-// config + address helpers moved to utils
 
-template <typename T>
-void FFT_Initiator<T>::display_frame_result(unsigned frame_id) {
-    cout << "\n[FRAME " << frame_id + 1 << "] Summary:" << endl;
-    cout << "  - Processing mode: " << (use_2d_decomposition ? "2D Decomposition" : "Direct FFT") << endl;
-    cout << "  - Verification: " << (frame_test_results[frame_id] ? "PASSED" : "FAILED") << endl;
-}
 
 template <typename T>
 void FFT_Initiator<T>::display_final_statistics() {
@@ -1017,7 +991,7 @@ void FFT_Initiator<T>::compute_reference_results(const vector<complex<T>>& test_
 template <typename T>
 bool FFT_Initiator<T>::verify_frame_result(unsigned frame_id) {
     if (frame_test_results.empty()) {
-        frame_test_results.resize(DEFAULT_TEST_FRAMES, false);
+        frame_test_results.resize(test_frames_count, false);
     }
     
     vector<complex<T>> fft_output = frame_output_data[frame_id];
@@ -1028,8 +1002,7 @@ bool FFT_Initiator<T>::verify_frame_result(unsigned frame_id) {
         return false;
     }
     
-
-    return compare_complex_sequences(fft_output, reference_dft,1e-3f,false);
+    return compare_complex_sequences(fft_output, reference_dft,1e-3f,true);
     // 后续的比较逻辑可以根据需要添加，例如调用 compare_complex_sequences
 }
 

@@ -91,7 +91,7 @@ public:
         }
         else if (addr == FFT_OUTPUT_READY_ADDR) {
             cout << sc_time_stamp() << " [BaseInitiatorModel] 收到FFT输出数据读取完成事件通知" << endl;
-            fft_output_ready_event.notify(1,SC_NS);  // 使用SC_ZERO_TIME延迟通知
+            fft_output_ready_event.notify();  // 使用SC_ZERO_TIME延迟通知
         }
         
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
@@ -474,9 +474,13 @@ public:
      * @param input_data N点复数输入数据
      */
     void send_fft_write_input_transaction(int N, const vector<complex<T>>& input_data) {
-        // 转换为16路浮点格式
+        // 转换为16路浮点格式，添加调试信息
+        // cout << "[DEBUG] send_fft_write_input_transaction: N=" << N << ", input_data.size()=" << input_data.size() << endl;
+        
         vector<T> float_data(2*N, 0.0f);
         FFTTestUtils::map_complex_input_to_T_float(N, input_data, float_data);
+        
+        // cout << "[DEBUG] After map_complex_input_to_T_float: float_data.size()=" << float_data.size() << endl;
         
         tlm::tlm_generic_payload trans;
         sc_time delay = sc_time(0, SC_NS);
@@ -566,8 +570,31 @@ public:
         // }
         // cout << endl;
         
-        // 重构点复数输出
-        return FFTTestUtils::reconstruct_complex_from_T_parallel(N, float_output);
+        // 重构点复数输出 - 添加详细调试信息
+        // cout << "[DEBUG] Before reconstruct_complex_from_T_parallel:" << endl;
+        // cout << "  - N = " << N << endl;
+        // cout << "  - float_output.size() = " << float_output.size() << endl;
+        // cout << "  - Expected size: " << 2*N << endl;
+        
+        // 显示前几个输出数据
+        // cout << "  - float_output data (first " << min(8, (int)float_output.size()) << " elements): ";
+        // for (size_t i = 0; i < min(8ul, float_output.size()); ++i) {
+        //     cout << float_output[i] << " ";
+        // }
+        // cout << endl;
+        
+        // 调用重构函数
+        vector<complex<T>> result = FFTTestUtils::reconstruct_complex_from_T_parallel(N, float_output);
+        
+        // cout << "[DEBUG] After reconstruct_complex_from_T_parallel:" << endl;
+        // cout << "  - result.size() = " << result.size() << endl;
+        // cout << "  - result data: ";
+        // for (size_t i = 0; i < min(4ul, result.size()); ++i) {
+        //     cout << "(" << result[i].real << "," << result[i].imag << ") ";
+        // }
+        // cout << endl;
+        
+        return result;
     }
     
     /**
@@ -598,9 +625,10 @@ public:
         send_fft_start_processing_transaction();
         wait(fft_result_ready_event);  // 等待FFT计算完成事件
         
+        vector<complex<T>> output_data;
         // 6. 读取输出结果
         cout << sc_time_stamp<< "[FFT_base_init] 读取输出结果..." << endl;
-        auto output_data = send_fft_read_output_transaction(fft_size);
+        output_data = send_fft_read_output_transaction(fft_size);
         cout << sc_time_stamp()<< "[FFT_base_init] 等待输出数据读取完成事件..." << endl;
         //wait(fft_output_ready_event);  // 等待输出数据读取完成事件
         cout << sc_time_stamp()<< "[FFT_base_init] 输出数据读取完成事件已收到" << endl;

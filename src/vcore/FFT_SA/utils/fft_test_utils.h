@@ -26,6 +26,7 @@
 #include <chrono>
 #include "complex_types.h"
 
+using namespace std;
 
 // ====== 常量定义 ======
 static constexpr double PI = 3.14159265358979323846;
@@ -119,9 +120,9 @@ inline complex<float> compute_twiddle_factor(unsigned N, unsigned k) {
 }
 
 /**
- * @brief 通用N点FFT多级Twiddle因子生成器
- * @param N FFT大小（必须是2的幂）
- * @param num_stages 级数 (log2(N))
+ * @brief 通用N点FFT多级Twiddle因子生成器 - 支持bypass模式
+ * @param N 硬件FFT大小（必须是2的幂）
+ * @param num_stages 硬件级数 (log2(N))
  * @param num_pes PE数量 (N/2)
  * @param bypass_stages 需要bypass的级数（从stage 0开始计数）
  * @return 返回各级的Twiddle因子配置
@@ -138,35 +139,39 @@ inline vector<vector<complex<float>>> generate_fft_twiddles(unsigned N,
         num_pes = N / 2;
     }
     
-    // 有效级数（减去bypass的级数）
+    // 计算有效FFT大小和级数
     unsigned effective_stages = num_stages - bypass_stages;
+    unsigned effective_fft_size = 1 << effective_stages;  // 2^effective_stages
+    
     vector<vector<complex<float>>> twiddles(effective_stages);
     
     // 为每个有效stage生成twiddle因子
     for (unsigned stage = 0; stage < effective_stages; stage++) {
-        unsigned actual_stage = stage + bypass_stages;  // 实际的stage编号
         twiddles[stage].resize(num_pes);
         
-        // 计算当前stage的twiddle因子步长
-        unsigned step = 1 << actual_stage;  // 2^stage
-        unsigned group_size = N / step;     // 每组的大小
+        // 对于bypass模式，使用有效FFT大小计算Twiddle因子
+        // 但保持原有的PE分配逻辑以兼容硬件结构
+        unsigned step = 1 << stage;  // 基于有效stage计数
+        unsigned group_size = effective_fft_size / step;
         
         for (unsigned pe = 0; pe < num_pes; pe++) {
-            // 计算当前PE对应的twiddle索引
             unsigned twiddle_idx;
-            if (actual_stage == 0) {
-                // Stage 0: 每个PE有不同的twiddle
-                twiddle_idx = pe;
+            
+            if (stage == 0) {
+                // 第一个有效stage：每个PE按有效FFT大小分配
+                twiddle_idx = (pe % effective_fft_size);
             } else {
-                // 后续stage: 按group分配twiddle
-                unsigned group = pe / (group_size / 2);
-                twiddle_idx = (pe % (group_size / 2)) * step;
+                // 后续stage：按group分配
+                if (group_size >= 2) {
+                    unsigned group = (pe % (effective_fft_size / 2)) / (group_size / 2);
+                    twiddle_idx = ((pe % (effective_fft_size / 2)) % (group_size / 2)) * step;
+                } else {
+                    twiddle_idx = 0;  // 当group_size < 2时使用W^0 = 1
+                }
             }
             
-            // 使用模运算确保索引在有效范围内
-            twiddle_idx %= N;
-            
-            twiddles[stage][pe] = compute_twiddle_factor(N, twiddle_idx);
+            // 使用有效FFT大小计算Twiddle因子
+            twiddles[stage][pe] = compute_twiddle_factor(effective_fft_size, twiddle_idx);
         }
     }
     
@@ -456,25 +461,38 @@ inline void map_complex_input_to_T_float(int N, const vector<complex<float>>& in
  * @return 8点复数输出
  */
 inline vector<complex<float>> reconstruct_complex_from_T_parallel(int N, const vector<float>& parallel_output) {
-    // if (parallel_output.size() != 2*N) {
-    //     cout << "Error: reconstruct_complex_from_T_parallel requires 2*N("<< N << ") float inputs\n";
-    //     return vector<complex<float>>(8, complex<float>(0, 0));
-    // }
-    // vector<complex<float>> result(N);
-    // for (unsigned i = 0; i < N; ++i) {
-    //     result[i].real = parallel_output[i];
-    //     // cout << "parallel_output[" << i << "]=" <<  parallel_output[i] << endl;  
-    //     cout << "result[" << i << "].real=" <<  parallel_output[i] << endl;      
-    //     result[i].imag = parallel_output[i + N];    
-    //     cout << "result[" << i << "].imag="  <<  parallel_output[i+ N] << endl;  
-    // }
-
-    vector<complex<float>> result(N);
-    for (unsigned i = 0; i < N; ++i) {
-        result[i] = complex<float>(parallel_output[i], parallel_output[i + N]);
+    // cout << "[RECONSTRUCT] Function called with N=" << N << ", input size=" << parallel_output.size() << endl;
+    
+    // 检查输入大小
+    if (parallel_output.size() < 2*N) {
+        cout << "[RECONSTRUCT] ERROR: Input size too small! Expected at least " << 2*N 
+             << " but got " << parallel_output.size() << endl;
+        return vector<complex<float>>(N, complex<float>(0, 0));
     }
-    cout << "reconstruct_complex_from_T_parallel success" << endl;
-
+    
+    // cout << "[RECONSTRUCT] Creating result vector of size " << N << endl;
+    vector<complex<float>> result;
+    
+    try {
+        result.reserve(N);  // 预分配内存
+        result.resize(N);   // 设置大小
+        
+        // cout << "[RECONSTRUCT] Processing elements:" << endl;
+        for (unsigned i = 0; i < N; ++i) {
+            float real_part = parallel_output[i];
+            float imag_part = parallel_output[i + N];
+            result[i] = complex<float>(real_part, imag_part);
+            //cout << "  [" << i << "]: (" << real_part << "," << imag_part << ")" << endl;
+        }
+        
+        // cout << "[RECONSTRUCT] Successfully created " << result.size() << " complex numbers" << endl;
+        
+    } catch (const std::exception& e) {
+        cout << "[RECONSTRUCT] EXCEPTION caught: " << e.what() << endl;
+        return vector<complex<float>>(N, complex<float>(0, 0));
+    }
+    
+    // cout << "[RECONSTRUCT] Function completed successfully" << endl;
     return result;
 }
 
