@@ -1,5 +1,4 @@
 # STUA-fft-mode-sim
-好的，这是一个为您项目生成的`README.md`文件。
 
 # STUA-fft-mode-sim: SystemC FFT 加速器仿真平台
 
